@@ -2,23 +2,22 @@
 #define IPC_H
 
 #include <cstdint>
+#include <layout.h>
 
-struct Resolution {
-    std::size_t rows;
-    std::size_t cols;
-};
+#define SOCK_PATH "/tmp/xwmux.sock"
 
 struct Msg {
-    enum class MsgType { RESOLUTION } type;
+
+    Msg() : type(MsgType::EXIT), msg({}) {};
+
+    enum class MsgType { RESOLUTION, EXIT } type;
     union MsgBody {
-        Resolution res;
+        Resolution res{};
     } msg;
 
     Msg(Resolution res) : type(MsgType::RESOLUTION), msg(res) {};
 };
 
 enum class Resp : uint8_t { OK, ERR };
-
-const char *SOCK_PATH = "/tmp/wxmux.sock";
 
 #endif

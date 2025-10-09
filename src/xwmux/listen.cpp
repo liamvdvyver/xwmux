@@ -1,18 +1,21 @@
+#include <X11/X.h>
+#include <X11/Xlib.h>
 #include <cstdlib>
 #include <pthread.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
-#include <utility>
 
-#include <instance.h>
-#include <listen.h>
+#include "instance.h"
+#include "ipc.h"
+#include "listen.h"
 
 void *Listener::operator()(void *args) {
 
     WMInstance *instance = (WMInstance *)args;
+    Display *display = XOpenDisplay(nullptr);
 
-    Msg msg{};
+    Msg msg(MsgType::EXIT);
 
     struct sockaddr_un local = {.sun_family = AF_UNIX, .sun_path = SOCK_PATH};
 
@@ -48,6 +51,7 @@ void *Listener::operator()(void *args) {
 
     int sock_con;
     socklen_t slen = sizeof(remote);
+    int exit_status = EXIT_FAILURE;
     while ((sock_con =
                 accept(sock_listen, (struct sockaddr *)&remote, &slen)) != -1) {
 
@@ -67,23 +71,37 @@ void *Listener::operator()(void *args) {
         close(sock_con);
 
         // Handle
-        switch (msg.type) {
-        case Msg::MsgType::RESOLUTION:
-            instance->set_resolution(msg.msg.res);
+        instance->push_msg(msg);
+
+        XEvent ev;
+        ev.type = ClientMessage;
+        ev.xclient = XClientMessageEvent{
+            .type = ClientMessage,
+            .display = display,
+            .window = instance->get_xstate().root,
+            .message_type = XInternAtom(display, "_XWMUX_Q", 0),
+            .format = 32,
+            // .data.l[0] = 0};
+        };
+
+        if (XSendEvent(display, instance->get_xstate().root, false,
+                       SubstructureRedirectMask, &ev)) {
+            // send_message("failed to send event message");
+        };
+        XFlush(display);
+
+        if (msg.type == MsgType::EXIT) {
+            exit_status = EXIT_SUCCESS;
             break;
-        case Msg::MsgType::EXIT:
-            delete instance;
-            pthread_exit(EXIT_SUCCESS);
-            break;
-        default:
-            std::unreachable();
         }
     };
 
-    // Got -1
-    close(sock_listen);
+    if (exit_status) {
+        perror("accept");
+        exit_status = EXIT_FAILURE;
+    }
 
-    perror("accept");
-    int exit_status = EXIT_FAILURE;
+    XCloseDisplay(display);
+    close(sock_listen);
     pthread_exit(&exit_status);
 }

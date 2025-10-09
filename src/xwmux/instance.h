@@ -1,55 +1,76 @@
-#ifndef INSTANCE_H
-#define INSTANCE_H
+#pragma once
 
 #include <X11/X.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
+#include <X11/cursorfont.h>
+
+#include <atomic>
+#include <cassert>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <mutex>
-#include <optional>
-#include <ostream>
 #include <pthread.h>
-#include <vector>
+#include <queue>
+#include <unordered_set>
 
+#include "ipc.h"
 #include "layout.h"
-#include <ipc.h>
-#include <listen.h>
+#include "listen.h"
+#include "tmux.h"
 
-const char EXIT_KEYSYM = 'q';
 const std::string ROOT_CLASS = "xwmux_root";
 
 class WMInstance {
 
   public:
-    WMInstance()
-        : m_display(XOpenDisplay(nullptr)),
-          m_root(XDefaultRootWindow(m_display)) {
-        if (!m_display) {
-            // err
-            exit(EXIT_FAILURE);
-        }
+    WMInstance() : m_xstate() {
+        std::cerr << "Init'd xstate\n";
+        init();
+        std::cerr << "Finished init\n";
+        run();
     };
+
+    ~WMInstance() { stop(); }
 
     void init() {
 
-        // set error handler
-        XSetErrorHandler(*error_handler);
+        if (!m_xstate.display) {
+            std::cerr << "Failed to open display\n";
+            exit(EXIT_FAILURE);
+        }
 
-        XSelectInput(m_display, m_root,
+        // set error handler: for startup
+        XSetErrorHandler(*startup_error_handler);
+
+        std::cerr << "Setup interim handler\n";
+
+        XSelectInput(m_xstate.display, m_xstate.root,
                      SubstructureRedirectMask | SubstructureNotifyMask);
-        XSync(m_display, false);
 
-        // grab q
-        XGrabKey(m_display, XKeysymToKeycode(m_display, EXIT_KEYSYM), Mod4Mask,
-                 m_root, 1, 1, 1);
+        std::cerr << "Selected root window\n";
+
+        XSync(m_xstate.display, 0);
+
+        if (m_existing_wm) {
+            std::cerr << "Another wm is running\n";
+            exit(EXIT_FAILURE);
+        }
+
+        std::cerr << "Selected root window\n";
+
+        XSetErrorHandler(*runtime_handler);
+
+        std::cerr << "Setup final handler\n";
     };
 
-    int run() {
+    void run() {
 
         // Open terminal
         open_term();
+
+        std::cerr << "Term opened\n";
 
         XEvent ev;
 
@@ -57,83 +78,173 @@ class WMInstance {
         pthread_t listener;
         pthread_create(&listener, nullptr, Listener::operator(), (void *)this);
 
-        while (1) {
+        std::cerr << "Launched listener\n";
 
-            if (!m_term.has_value()) {
-                open_term();
-            }
+        // set cursor
+        XDefineCursor(m_xstate.display, m_xstate.root,
+                      XCreateFontCursor(m_xstate.display, XC_left_ptr));
 
-            // Get event
-            if (XNextEvent(m_display, &ev)) {
-                // TODO: need check?
-            };
+        std::cerr << "Cursor set\n";
+        std::cerr << "Entering event loop\n";
 
-            // Handle
+        while (!m_stop.load(std::memory_order_relaxed)) {
+
+            // Handle event
+            XNextEvent(m_xstate.display, &ev);
+            std::cerr << "Got event\n";
             handle_event(ev);
+            sync();
         }
+
+        // Kill listener
+        pthread_join(listener, nullptr);
     };
 
-    ~WMInstance() { XCloseDisplay(m_display); }
+    //--- Handle IPC events --------------------------------------------------//
 
-    void set_resolution(Resolution res) {
-        m_setting_lk.lock();
-        m_res = res;
-        m_setting_lk.unlock();
+    const XState &get_xstate() { return m_xstate; }
+
+    void push_msg(Msg msg) {
+        std::lock_guard lk = lock();
+        m_msg_q.push(msg);
     }
 
-  private:
-    Display *m_display;
-    Window m_root;
-    std::optional<Window> m_term{};
-    std::vector<Window> m_windows{};
-    Resolution m_res;
-    std::mutex m_setting_lk;
+    void set_term_resolution(Resolution resoltuion) {
+        m_xstate.term_layout.set_term_resolution(resoltuion);
+    }
 
-    static int error_handler(_XDisplay *display, XErrorEvent *err) {
+    void stop() {
+        XCloseDisplay(m_xstate.display);
+        for (auto [tm_window, workspace] : m_tmux_mapping.get_workspaces()) {
+            for (auto [tm_pane, w] : workspace.get_windows()) {
+                kill_pane(tm_pane);
+            }
+        }
+        exit(EXIT_SUCCESS);
+    }
+
+    void focus_tmux(TmuxLocation location) {
+        if (!m_window_q.empty() && !m_tmux_mapping.filled(location)) {
+
+            Window window = m_window_q.front();
+            m_window_q.pop();
+
+            // std::string msg = "inserting at ";
+            // msg.append(std::to_string(location.first));
+            // send_message(msg);
+
+            // Already destroyed, so kill the pane
+            if (!m_pending_windows.count(window)) {
+                kill_pane(location.second);
+
+            } else {
+                m_tmux_mapping.add_window(m_xstate, window, location);
+                m_pending_windows.erase(window);
+            }
+        }
+
+        m_tmux_mapping.set_active(m_xstate, location);
+
+        XSync(m_xstate.display, 0);
+    }
+
+    // Kills the focused client, if any
+    void kill_pane_client() {
+        if (m_tmux_mapping.filled()) {
+
+            // Close window
+            // https://nachtimwald.com/2009/11/08/sending-wm_delete_window-client-messages/
+            XEvent ev;
+            ev.xclient.type = ClientMessage;
+            ev.xclient.window = m_tmux_mapping.current_window();
+            ev.xclient.message_type =
+                XInternAtom(m_xstate.display, "WM_PROTOCOLS", true);
+            ev.xclient.format = 32;
+            ev.xclient.data.l[0] =
+                XInternAtom(m_xstate.display, "WM_DELETE_WINDOW", false);
+            ev.xclient.data.l[1] = CurrentTime;
+            XSendEvent(m_xstate.display, m_tmux_mapping.current_window(), False,
+                       NoEventMask, &ev);
+            XSync(m_xstate.display, 0);
+        }
+
+        // Pane should be killed normally on unmap notify.
+    }
+
+    std::lock_guard<std::mutex> lock() {
+        return std::lock_guard(m_event_mutex);
+    }
+
+    void sync() { XSync(m_xstate.display, 0); }
+
+  private:
+    std::mutex m_event_mutex;
+
+    // State
+    XState m_xstate;
+    TmuxXWindowMapping m_tmux_mapping;
+
+    std::queue<Msg> m_msg_q;
+
+    std::queue<Window> m_window_q;
+    std::unordered_set<Window> m_pending_windows;
+
+    std::atomic<bool> m_stop = false;
+    static bool m_existing_wm;
+
+    static int startup_error_handler(_XDisplay *display, XErrorEvent *err) {
+        assert(err->error_code == BadAccess);
+        m_existing_wm = true;
         (void)display;
         (void)err;
         return EXIT_FAILURE;
-    };
-
-    void handle_keypress(XEvent ev) {
-        std::cout << ev.xkey.keycode << std::endl;
-        if (ev.xkey.keycode == XKeysymToKeycode(m_display, EXIT_KEYSYM)) {
-            exit(EXIT_SUCCESS);
-        }
-        return;
     }
 
-    void open_term() {
+    static int runtime_handler(_XDisplay *display, XErrorEvent *err) {
+
+        size_t err_msg_len = 100;
+        char *err_msg = (char *)malloc(err_msg_len + 1);
+        XGetErrorText(display, err->error_code, err_msg, err_msg_len);
+
+        send_message(err_msg);
+        return EXIT_SUCCESS;
+    }
+
+    int open_term() {
         // TODO: make configurable
         std::string root_term_cmd = "kitty --detach";
         root_term_cmd.append(" --class ");
         root_term_cmd.append(ROOT_CLASS);
-        root_term_cmd.append(" --exec tmux-sessioniser default");
-
-        std::system(root_term_cmd.c_str());
+        root_term_cmd.append(" --exec ~/git/xwmux/scripts/init_term.sh");
+        return std::system(root_term_cmd.c_str());
     }
 
     // Check if window is a root terminal.
-    constexpr bool is_root_term(XMapRequestEvent req) {
+    constexpr bool is_root_term(Window id) {
         XClassHint *hint = XAllocClassHint();
-        XGetClassHint(m_display, req.window, hint);
-        return std::strcmp(hint->res_class, ROOT_CLASS.c_str()) == 0;
+        bool ret = XGetClassHint(m_xstate.display, id, hint)
+                       ? std::strcmp(hint->res_class, ROOT_CLASS.c_str()) == 0
+                       : false;
         XFree(hint);
+        return ret;
+    }
+
+    constexpr bool override_redirect(Window id) {
+        XWindowAttributes attr;
+        XGetWindowAttributes(m_xstate.display, id, &attr);
+        return attr.override_redirect;
     }
 
     // If the window has appropriate class name,
-    void set_term(XMapRequestEvent req) {
+    void set_term(Window id) {
 
         // Close current window
-        if (m_term.has_value()) {
-            XKillClient(m_display, m_term.value());
+        if (m_xstate.term) {
+            XKillClient(m_xstate.display, m_xstate.term.value());
         }
 
         // Use new window as root
-        m_term = req.window;
-        XMoveResizeWindow(m_display, req.window, 0, 0,
-                          DefaultScreenOfDisplay(m_display)->width,
-                          DefaultScreenOfDisplay(m_display)->height);
+        m_xstate.term = id;
     }
 
     void handle_event(XEvent ev) {
@@ -145,12 +256,22 @@ class WMInstance {
         case ConfigureNotify:
             break;
         case MapRequest:
-            XMapWindow(m_display, ev.xmaprequest.window);
-            XSetInputFocus(m_display, ev.xmaprequest.window, 2, 0);
-            if (is_root_term(ev.xmaprequest)) {
-                set_term(ev.xmaprequest);
-            }
-            XSync(m_display, false);
+            [&](Window w) {
+                if (override_redirect(w)) {
+                    return;
+                } else if (is_root_term(w)) {
+                    m_xstate.resolution.fullscreen().resize_to(m_xstate.display,
+                                                               w);
+                    XMapRaised(m_xstate.display, w);
+                    m_xstate.set_term(w);
+                    m_xstate.focus_term();
+                    XSync(m_xstate.display, 0);
+                } else {
+                    m_window_q.push(w);
+                    m_pending_windows.insert(w);
+                    spawn_window();
+                }
+            }(ev.xmaprequest.window);
             break;
         case ReparentNotify:
             break;
@@ -160,22 +281,55 @@ class WMInstance {
             break;
         case UnmapNotify:
             break;
+            // TODO: print error and focus the temrminal if it was the active
+            // window
         case DestroyNotify:
-            if (ev.xdestroywindow.window == m_term) {
-                m_term = {};
-
-                // Reopen terminal
+            if (ev.xdestroywindow.window == m_xstate.term) {
+                m_xstate.term = {};
                 open_term();
+            } else {
+                if (!m_tmux_mapping.has_window(ev.xdestroywindow.window)) {
+                    if (m_pending_windows.count(ev.xdestroywindow.window))
+                        send_message("ERASED EARLY");
+                    m_pending_windows.erase(ev.xdestroywindow.window);
+                } else {
+                    m_tmux_mapping.remove_window(ev.xdestroywindow.window);
+                }
+                // Return focus to root termnal
+                m_xstate.focus_term();
             }
             break;
         case KeyPress:
-            handle_keypress(ev);
+            break;
+
+        case ClientMessage:
+            // Handle ipc message
+            m_event_mutex.lock();
+            if (!m_msg_q.empty()) {
+                Msg msg = m_msg_q.front();
+                m_msg_q.pop();
+                m_event_mutex.unlock();
+
+                switch (msg.type) {
+                case MsgType::RESOLUTION:
+                    set_term_resolution(msg.msg.resolution);
+                    break;
+                case MsgType::EXIT:
+                    stop();
+                    pthread_exit(EXIT_SUCCESS);
+                    break;
+                case MsgType::TMUX_NOTIFY:
+                    focus_tmux(msg.msg.tmux_event.location);
+                    break;
+                case MsgType::KILL_PANE:
+                    kill_pane_client();
+                }
+            } else {
+                m_event_mutex.unlock();
+            }
             break;
         default:
-            // std::unreachable();
             break;
         }
     }
 };
-
-#endif

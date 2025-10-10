@@ -26,9 +26,7 @@ class WMInstance {
 
   public:
     WMInstance() : m_xstate() {
-        std::cerr << "Init'd xstate\n";
         init();
-        std::cerr << "Finished init\n";
         run();
     };
 
@@ -44,25 +42,17 @@ class WMInstance {
         // set error handler: for startup
         XSetErrorHandler(*startup_error_handler);
 
-        std::cerr << "Setup interim handler\n";
-
         XSelectInput(m_xstate.display, m_xstate.root,
                      SubstructureRedirectMask | SubstructureNotifyMask);
 
-        std::cerr << "Selected root window\n";
-
-        XSync(m_xstate.display, 0);
+        sync();
 
         if (m_existing_wm) {
             std::cerr << "Another wm is running\n";
             exit(EXIT_FAILURE);
         }
 
-        std::cerr << "Selected root window\n";
-
         XSetErrorHandler(*runtime_handler);
-
-        std::cerr << "Setup final handler\n";
     };
 
     void run() {
@@ -70,28 +60,20 @@ class WMInstance {
         // Open terminal
         open_term();
 
-        std::cerr << "Term opened\n";
-
         XEvent ev;
 
         // run listener
         pthread_t listener;
         pthread_create(&listener, nullptr, Listener::operator(), (void *)this);
 
-        std::cerr << "Launched listener\n";
-
         // set cursor
         XDefineCursor(m_xstate.display, m_xstate.root,
                       XCreateFontCursor(m_xstate.display, XC_left_ptr));
-
-        std::cerr << "Cursor set\n";
-        std::cerr << "Entering event loop\n";
 
         while (!m_stop.load(std::memory_order_relaxed)) {
 
             // Handle event
             XNextEvent(m_xstate.display, &ev);
-            std::cerr << "Got event\n";
             handle_event(ev);
             sync();
         }
@@ -129,10 +111,6 @@ class WMInstance {
             Window window = m_window_q.front();
             m_window_q.pop();
 
-            // std::string msg = "inserting at ";
-            // msg.append(std::to_string(location.first));
-            // send_message(msg);
-
             // Already destroyed, so kill the pane
             if (!m_pending_windows.count(window)) {
                 kill_pane(location.second);
@@ -144,30 +122,28 @@ class WMInstance {
         }
 
         m_tmux_mapping.set_active(m_xstate, location);
+    }
 
-        XSync(m_xstate.display, 0);
+    void kill_client(Window window) {
+        // Close window
+        // https://nachtimwald.com/2009/11/08/sending-wm_delete_window-client-messages/
+        XEvent ev;
+        ev.xclient.type = ClientMessage;
+        ev.xclient.window = window;
+        ev.xclient.message_type =
+            XInternAtom(m_xstate.display, "WM_PROTOCOLS", true);
+        ev.xclient.format = 32;
+        ev.xclient.data.l[0] =
+            XInternAtom(m_xstate.display, "WM_DELETE_WINDOW", false);
+        ev.xclient.data.l[1] = CurrentTime;
+        XSendEvent(m_xstate.display, window, False, NoEventMask, &ev);
     }
 
     // Kills the focused client, if any
     void kill_pane_client() {
         if (m_tmux_mapping.filled()) {
-
-            // Close window
-            // https://nachtimwald.com/2009/11/08/sending-wm_delete_window-client-messages/
-            XEvent ev;
-            ev.xclient.type = ClientMessage;
-            ev.xclient.window = m_tmux_mapping.current_window();
-            ev.xclient.message_type =
-                XInternAtom(m_xstate.display, "WM_PROTOCOLS", true);
-            ev.xclient.format = 32;
-            ev.xclient.data.l[0] =
-                XInternAtom(m_xstate.display, "WM_DELETE_WINDOW", false);
-            ev.xclient.data.l[1] = CurrentTime;
-            XSendEvent(m_xstate.display, m_tmux_mapping.current_window(), False,
-                       NoEventMask, &ev);
-            XSync(m_xstate.display, 0);
+            kill_client(m_tmux_mapping.current_window());
         }
-
         // Pane should be killed normally on unmap notify.
     }
 
@@ -258,14 +234,13 @@ class WMInstance {
         case MapRequest:
             [&](Window w) {
                 if (override_redirect(w)) {
-                    return;
                 } else if (is_root_term(w)) {
                     m_xstate.resolution.fullscreen().resize_to(m_xstate.display,
                                                                w);
-                    XMapRaised(m_xstate.display, w);
+                    XLowerWindow(m_xstate.display, w);
+                    XMapWindow(m_xstate.display, w);
                     m_xstate.set_term(w);
                     m_xstate.focus_term();
-                    XSync(m_xstate.display, 0);
                 } else {
                     m_window_q.push(w);
                     m_pending_windows.insert(w);
@@ -281,21 +256,16 @@ class WMInstance {
             break;
         case UnmapNotify:
             break;
-            // TODO: print error and focus the temrminal if it was the active
-            // window
         case DestroyNotify:
             if (ev.xdestroywindow.window == m_xstate.term) {
                 m_xstate.term = {};
                 open_term();
+                m_xstate.focus_term();
+            } else if (!m_tmux_mapping.has_window(ev.xdestroywindow.window)) {
+                m_pending_windows.erase(ev.xdestroywindow.window);
+                // Not focused yet, do not focus terminal
             } else {
-                if (!m_tmux_mapping.has_window(ev.xdestroywindow.window)) {
-                    if (m_pending_windows.count(ev.xdestroywindow.window))
-                        send_message("ERASED EARLY");
-                    m_pending_windows.erase(ev.xdestroywindow.window);
-                } else {
-                    m_tmux_mapping.remove_window(ev.xdestroywindow.window);
-                }
-                // Return focus to root termnal
+                m_tmux_mapping.remove_window(ev.xdestroywindow.window);
                 m_xstate.focus_term();
             }
             break;
@@ -319,7 +289,7 @@ class WMInstance {
                     pthread_exit(EXIT_SUCCESS);
                     break;
                 case MsgType::TMUX_NOTIFY:
-                    focus_tmux(msg.msg.tmux_event.location);
+                    focus_tmux(msg.msg.focus_location);
                     break;
                 case MsgType::KILL_PANE:
                     kill_pane_client();

@@ -75,14 +75,11 @@ void *Listener::operator()(void *args) {
 
         XEvent ev;
         ev.type = ClientMessage;
-        ev.xclient = XClientMessageEvent{
-            .type = ClientMessage,
-            .display = display,
-            .window = instance->get_xstate().root,
-            .message_type = XInternAtom(display, "_XWMUX_Q", 0),
-            .format = 32,
-            // .data.l[0] = 0};
-        };
+        ev.xclient.type = ClientMessage;
+        ev.xclient.display = display;
+        ev.xclient.window = instance->get_xstate().root;
+        ev.xclient.message_type = XInternAtom(display, "_XWMUX_Q", 0);
+        ev.xclient.format = 32;
 
         if (XSendEvent(display, instance->get_xstate().root, false,
                        SubstructureRedirectMask, &ev)) {

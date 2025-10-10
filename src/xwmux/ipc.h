@@ -1,5 +1,4 @@
-#ifndef IPC_H
-#define IPC_H
+#pragma once
 
 #include <cstdint>
 #include <layout.h>
@@ -8,34 +7,18 @@
 
 #define SOCK_PATH "/tmp/xwmux.sock"
 
-enum class TmuxEventType {
-    FOCUS_PANE,
-    FOCUS_WINDOW,
-    FOCUS_SESSION,
-    NEW_PANE,
-    NEW_WINDOW,
-    NEW_SESSION,
-    DESTROY_PANE,
-    DESTROY_WINDOW,
-    DESTROY_SESSION,
-    RESIZE_PANE, // any layout changes to current window, re-calculate window
-                 // layout
-    SWAP_PANE,
-    SWAP_WINDOW,
-};
+enum class MsgType { RESOLUTION, EXIT, TMUX_NOTIFY, KILL_PANE };
 
-struct TmuxEvent {
-    TmuxEventType type;
+struct TmuxPosition {
     uint32_t session_id;
     TmuxLocation location;
 };
 
-enum class MsgType { RESOLUTION, EXIT, TMUX_NOTIFY, KILL_PANE };
 
 union MsgBody {
     int null_msg;
     Resolution resolution;
-    TmuxEvent tmux_event;
+    TmuxLocation focus_location;
     TmuxPaneID kill_pane;
 };
 
@@ -44,8 +27,8 @@ struct Msg {
     Msg(MsgType type) : type(type) {};
     Msg(Resolution res) : type(MsgType::RESOLUTION) { msg.resolution = res; };
 
-    Msg(TmuxEvent tmux_ev) : type(MsgType::TMUX_NOTIFY) {
-        msg.tmux_event = tmux_ev;
+    Msg(TmuxLocation focus_location) : type(MsgType::TMUX_NOTIFY) {
+        msg.focus_location = focus_location;
     };
 
     Msg(TmuxPaneID tmux_pane) : type(MsgType::KILL_PANE) {
@@ -57,5 +40,3 @@ struct Msg {
 };
 
 enum class Resp : uint8_t { OK, ERR };
-
-#endif

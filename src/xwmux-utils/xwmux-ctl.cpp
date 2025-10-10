@@ -64,11 +64,8 @@ struct NotifyTmux : Command {
     std::optional<Msg> handle(char **argv) override {
         (void)argv;
         uint32_t session_id = 0, window_id = 0, pane_id = 0;
-        TmuxEventType ev_type;
 
-        if (!strcmp(argv[1], std::string("focus").c_str())) {
-            ev_type = TmuxEventType::FOCUS_PANE;
-        } else {
+        if (strcmp(argv[1], std::string("focus").c_str())) {
             return std::nullopt;
         }
 
@@ -83,7 +80,9 @@ struct NotifyTmux : Command {
         window_id = std::stoi(arg.substr(a_idx + 1, p_idx - a_idx));
         pane_id = std::stoi(arg.substr(p_idx + 1));
 
-        Msg msg{TmuxEvent(ev_type, session_id, std::make_pair(window_id, pane_id))};
+        (void)session_id;
+
+        Msg msg{std::make_pair(window_id, pane_id)};
         return msg;
     }
 };

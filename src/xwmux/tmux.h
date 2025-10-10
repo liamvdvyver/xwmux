@@ -65,7 +65,7 @@ struct TmuxWorkspace {
 
     void show(const XState &state) const {
         for (auto [p, w] : m_app_windows) {
-            XMapRaised(state.display, w);
+            XMapWindow(state.display, w);
         }
     }
 
@@ -155,10 +155,6 @@ struct TmuxXWindowMapping {
 
             // Deactivate old
             if (m_active.first >= 0) {
-                std::string msg = "notify-send 'hiding ";
-                msg.append(std::to_string(m_active.first));
-                msg.push_back('\'');
-                send_message(msg);
                 m_workspaces[m_active.first].hide(state);
             }
 
@@ -178,10 +174,6 @@ struct TmuxXWindowMapping {
             Window target = has_x_window
                                 ? m_workspaces[location.first][location.second]
                                 : state.term.value_or(state.root);
-
-            std::string msg = "focusing ";
-            msg.append(std::to_string(target));
-            std::cerr << msg;
 
             XSetInputFocus(state.display, target, 0, 0);
             m_active.second = location.second;

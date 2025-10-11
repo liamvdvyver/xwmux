@@ -20,9 +20,7 @@ constexpr void spawn_window() {
     std::system("tmux new-window -n 'xwmux-app' ''");
 }
 
-constexpr void split_window() {
-    std::system("tmux split-window ''");
-}
+constexpr void split_window() { std::system("tmux split-window ''"); }
 
 constexpr void send_message(std::string msg) {
     std::string tmux_msg = "tmux display-message '";
@@ -115,8 +113,9 @@ struct TmuxXWindowMapping {
 
             auto [tm_window, tm_pane] = m_inverse_map[window];
             m_workspaces[tm_window].erase_pane(tm_pane);
-            m_workspaces.erase(tm_window);
-            // m_gui_panes.erase(tm_pane);
+            if (m_workspaces[tm_window].get_windows().empty()) {
+                m_workspaces.erase(tm_window);
+            }
             m_inverse_map.erase(window);
 
             kill_pane(tm_pane);

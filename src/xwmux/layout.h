@@ -93,8 +93,8 @@ struct WindowLayouts {
 
     constexpr WindowPosition add_bar(WindowPosition position) const {
         if (m_bar_position == TmuxBarPosition::TOP) {
-            position.start.x++;
-            position.end.x++;
+            position.start.y++;
+            position.end.y++;
         }
         return position;
     }

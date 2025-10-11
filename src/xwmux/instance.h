@@ -20,6 +20,13 @@
 #include "listen.h"
 #include "tmux.h"
 
+constexpr void notify(std::string_view msg) {
+    std::string cmd = "notify-send '";
+    cmd.append(msg);
+    cmd.push_back('\'');
+    std::system(cmd.c_str());
+}
+
 const std::string ROOT_CLASS = "xwmux_root";
 
 class WMInstance {
@@ -106,13 +113,16 @@ class WMInstance {
     }
 
     void focus_tmux(TmuxLocation location) {
+        // Have window to add
         if (!m_window_q.empty() && !m_tmux_mapping.filled(location)) {
 
             Window window = m_window_q.front();
             m_window_q.pop();
 
-            // Already destroyed, so kill the pane
-            if (!m_pending_windows.count(window)) {
+            // Already destroyed or window already mapped, so kill the pane
+            // TODO: avoid adding to queue twice instead?
+            if (!m_pending_windows.count(window) ||
+                m_tmux_mapping.has_window(window)) {
                 kill_pane(location.second);
 
             } else {
@@ -297,12 +307,12 @@ class WMInstance {
                     stop();
                     pthread_exit(EXIT_SUCCESS);
                     break;
-                case MsgType::TMUX_NOTIFY:
-                    focus_tmux(msg.msg.focus_location);
-                    break;
                 case MsgType::KILL_PANE:
                     kill_pane_client();
                 case MsgType::TMUX_POSITION:
+                    if (msg.msg.pane_position.focused) {
+                        focus_tmux(msg.msg.pane_position.location);
+                    }
                     set_position(msg.msg.pane_position.location,
                                  msg.msg.pane_position.position);
                 }

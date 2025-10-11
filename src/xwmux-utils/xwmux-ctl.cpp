@@ -75,20 +75,6 @@ std::optional<TmuxLocation> get_loc(int argc, char **argv, int cur) {
     }
 }
 
-struct NotifyTmux : Command {
-    std::string keyword() override { return "tmux-focus"; }
-    std::string usage_suffix() override {
-        return " $<session-id> @<window-id> %<pane-id>";
-    }
-    std::optional<Msg> handle(int argc, char **argv, int cur) override {
-        if (cur + 3 != argc - 1) {
-            return std::nullopt;
-        }
-        std::optional<TmuxLocation> loc = get_loc(argc, argv, cur + 1);
-        return loc.has_value() ? std::optional(Msg(loc.value())) : std::nullopt;
-    }
-};
-
 struct KillPane : Command {
     std::string keyword() override { return "kill-pane"; }
     std::string usage_suffix() override { return " [ %<pane-id> | focused ]"; }
@@ -107,32 +93,38 @@ struct KillPane : Command {
 struct NotifyTmuxPosition : Command {
     std::string keyword() override { return "tmux-position"; }
     std::string usage_suffix() override {
-        return " $<session-id> @<window-id> %<pane-id> pane_left pane_top "
-               "pane_width pane_height";
+        return " focused $<session-id> @<window-id> %<pane-id> pane_left "
+               "pane_top pane_width pane_height";
     }
     std::optional<Msg> handle(int argc, char **argv, int cur) override {
-        if (cur + 7 != argc - 1) {
+        if (cur + 8 != argc - 1) {
             std::cout << "wrong args\n";
             return std::nullopt;
         }
-        std::optional<TmuxLocation> loc = get_loc(argc, argv, cur + 1);
-        if (!loc.has_value()) {
-            std::cout << "couldn't get loc\n";
-            return std::nullopt;
-        }
-        cur += 4;
+        cur++;
+
         try {
+            bool focused = std::stoi(argv[cur++]);
+
+            std::optional<TmuxLocation> loc = get_loc(argc, argv, cur);
+            if (!loc.has_value()) {
+                std::cout << "couldn't get loc\n";
+                return std::nullopt;
+            }
+            cur += 3;
+
             size_t pane_top, pane_left, pane_width, pane_height;
-            pane_left = std::stoi(argv[cur]);
-            pane_top = std::stoi(argv[cur + 1]);
-            pane_width = std::stoi(argv[cur + 2]);
-            pane_height = std::stoi(argv[cur + 3]);
+            pane_left = std::stoi(argv[cur++]);
+            pane_top = std::stoi(argv[cur++]);
+            pane_width = std::stoi(argv[cur++]);
+            pane_height = std::stoi(argv[cur++]);
 
             return TmuxPanePosition{
                 .location = loc.value(),
                 .position = WindowPosition(
                     {pane_left, pane_top},
-                    {pane_left + pane_width, pane_top + pane_height})};
+                    {pane_left + pane_width, pane_top + pane_height}),
+                .focused = focused};
 
         } catch (std::invalid_argument e) {
             std::cout << "couldn't get rest\n";
@@ -146,8 +138,6 @@ std::unique_ptr<Command> parse_cmd(std::string cmd) {
         return std::make_unique<TellResolution>();
     } else if (cmd == Exit().keyword()) {
         return std::make_unique<Exit>();
-    } else if (cmd == NotifyTmux().keyword()) {
-        return std::make_unique<NotifyTmux>();
     } else if (cmd == KillPane().keyword()) {
         return std::make_unique<KillPane>();
     } else if (cmd == NotifyTmuxPosition().keyword()) {

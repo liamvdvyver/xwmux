@@ -1,5 +1,4 @@
-#include "tmux.h"
-#include <ipc.h>
+#include <X11/Xlib.h>
 
 #include <cstddef>
 #include <cstdlib>
@@ -12,6 +11,10 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
+
+#include "ipc.h"
+#include "tmux.h"
+#include "tmux_keys.h"
 
 struct Command {
   public:
@@ -38,10 +41,10 @@ struct Command {
 struct InitLayout : Command {
     std::string keyword() override { return "init"; }
     std::string usage_suffix() override {
-        return " <rows> <cols> <bar-position>";
+        return " <rows> <cols> <bar-position> <prefix>";
     }
     std::optional<Msg> handle(int argc, char **argv, int cur) override {
-        if (cur + 3 != argc - 1) {
+        if (cur + 4 != argc - 1) {
             return std::nullopt;
         }
         std::size_t h = std::atoi(argv[cur + 1]);
@@ -54,7 +57,11 @@ struct InitLayout : Command {
             std::cerr << "Bad bar position\n";
         }
 
-        Msg msg(TermInitLayout{{w, h}, pos});
+        Display *dpy = XOpenDisplay(nullptr);
+        ModifiedKeyCode prefix = tmux_to_keycode(dpy, argv[cur + 4]);
+        XCloseDisplay(dpy);
+
+        Msg msg(TermInitLayout{{w, h}, pos, prefix});
         return msg;
     }
 };

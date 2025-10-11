@@ -27,7 +27,8 @@ if ! tmux list-sessions; then
 fi
 
 status_position=$(tmux show-options -g status-position | cut -f 2 -d ' ')
+prefix=$(tmux show-options -g prefix | cut -f 2 -d ' ')
 
-xwmux-ctl init "$rows" "$cols" "$status_position"
+xwmux-ctl init "$rows" "$cols" "$status_position" "$prefix"
 
 tmux new-session -A -s "$session_name"

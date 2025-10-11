@@ -5,6 +5,16 @@
 
 #include "layout.h"
 
+struct ModifiedKeyCode {
+    ModifiedKeyCode(
+        const KeyCode keycode,
+        const uint modifiers
+    ) : keycode(keycode), modifiers(modifiers) {}
+
+    KeyCode keycode;
+    uint modifiers;
+};
+
 struct XState {
     XState()
         : display(XOpenDisplay(nullptr)), root(XDefaultRootWindow(display)),
@@ -23,10 +33,24 @@ struct XState {
     void set_term(Window term) { this->term = term; }
     void focus_term() { XSetInputFocus(display, term.value_or(root), 0, 0); }
 
+    void set_prefix(ModifiedKeyCode new_prefix) {
+        if (prefix.has_value()) {
+            XUngrabKey(display, prefix->keycode, prefix->modifiers, root);
+        }
+
+        prefix = new_prefix;
+        if ((prefix = new_prefix).has_value()) {
+            XGrabKey(display, prefix->keycode, prefix->modifiers, root, 0,
+                     GrabModeAsync, GrabModeAsync);
+        }
+    }
+
     Display *display;
     Window root;
     Screen *screen;
     Resolution resolution;
     WindowLayouts term_layout;
+
     std::optional<Window> term;
+    std::optional<ModifiedKeyCode> prefix;
 };

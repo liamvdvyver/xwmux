@@ -115,6 +115,11 @@ class WMInstance {
     }
 
     void focus_tmux(TmuxLocation location) {
+
+        if (m_ignore_focus) {
+            return;
+        }
+
         // Have window to add
         if (!m_window_q.empty() && !m_tmux_mapping.filled(location)) {
 
@@ -168,6 +173,40 @@ class WMInstance {
         }
     }
 
+    void forward_prefix(XEvent ev) {
+        // If already overridden, focus and forward to gui window
+        if (m_tmux_mapping.overridden()) {
+
+            m_tmux_mapping.release_override(m_xstate);
+
+            // Send to current window
+            ev.xkey.window = m_tmux_mapping.current_window();
+
+            // If gui has focus
+        } else if (m_tmux_mapping.filled()) {
+
+            if (!m_xstate.term.has_value()) {
+                return;
+            }
+
+            m_ignore_focus = true;
+            m_xstate.focus_term();
+            m_ignore_focus = false;
+            ev.xkey.window = m_xstate.term.value();
+            m_tmux_mapping.override();
+
+            // Send to term
+        } else if (m_xstate.term.has_value()) {
+            ev.xkey.window = m_xstate.term.value();
+        }
+
+        // Send the event
+        if (m_xstate.term.has_value()) {
+            XSendEvent(m_xstate.display, ev.xkey.window, False, NoEventMask,
+                       &ev);
+        }
+    }
+
     std::lock_guard<std::mutex> lock() {
         return std::lock_guard(m_event_mutex);
     }
@@ -188,6 +227,9 @@ class WMInstance {
 
     std::atomic<bool> m_stop = false;
     static bool m_existing_wm;
+
+    // When sending tmux commands to pane from gui focus
+    bool m_ignore_focus = false;
 
     static int startup_error_handler(_XDisplay *display, XErrorEvent *err) {
         assert(err->error_code == BadAccess);
@@ -301,6 +343,11 @@ class WMInstance {
             }
             break;
         case KeyPress:
+            if (ev.xkey.keycode == m_xstate.prefix->keycode &&
+                ev.xkey.state == m_xstate.prefix->modifiers) {
+
+                forward_prefix(ev);
+            }
             break;
 
         case ClientMessage:
@@ -315,6 +362,7 @@ class WMInstance {
                 case MsgType::RESOLUTION:
                     set_term_layout(msg.msg.term_init_layout.term_resolution,
                                     msg.msg.term_init_layout.bar_position);
+                    m_xstate.set_prefix(msg.msg.term_init_layout.prefix);
                     break;
                 case MsgType::EXIT:
                     stop();

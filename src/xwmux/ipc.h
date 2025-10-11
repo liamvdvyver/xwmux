@@ -4,6 +4,7 @@
 #include <layout.h>
 
 #include "tmux.h"
+#include "xwrapper.h"
 
 #define SOCK_PATH "/tmp/xwmux.sock"
 
@@ -12,6 +13,7 @@ enum class MsgType { RESOLUTION, EXIT, TMUX_POSITION, KILL_PANE };
 struct TermInitLayout {
     Resolution term_resolution;
     TmuxBarPosition bar_position;
+    ModifiedKeyCode prefix;
 };
 
 struct TmuxPanePosition {

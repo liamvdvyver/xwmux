@@ -35,6 +35,12 @@ constexpr void kill_pane(const TmuxPaneID tm_pane) {
     std::system(msg.c_str());
 }
 
+constexpr void focus_location(const TmuxPaneID tm_pane) {
+    std::string msg = "tmux select-pane -t %";
+    msg.append(std::to_string(tm_pane));
+    std::system(msg.c_str());
+}
+
 struct TmuxWorkspace {
   public:
     TmuxWorkspace() = default;
@@ -159,6 +165,16 @@ struct TmuxXWindowMapping {
 
     bool has_window(Window window) const { return m_inverse_map.count(window); }
 
+    // Sets the override flag
+    void override() { m_overriden = true; }
+
+    // Unsets the override flag and re-focuses the active window
+    void release_override(const XState &state) {
+        focus_pane(state, m_active, true);
+    }
+
+    bool overridden() const { return m_overriden; }
+
   private:
     void activate_window(const XState &state, TmuxWindowID tm_window) {
         if (m_active.first != tm_window) {
@@ -173,8 +189,11 @@ struct TmuxXWindowMapping {
         m_active.first = tm_window;
     }
 
-    void focus_pane(const XState &state, TmuxLocation location) {
-        if (m_active != location) {
+    // Clears override if switch takes place
+    void focus_pane(const XState &state, TmuxLocation location,
+                    bool redundant_refocus = false) {
+
+        if (m_active != location || redundant_refocus) {
 
             // If workspace has gui window at location, focus it
             bool has_x_window =
@@ -187,6 +206,8 @@ struct TmuxXWindowMapping {
 
             XSetInputFocus(state.display, target, 0, 0);
             m_active.second = location.second;
+
+            m_overriden = false;
         }
     }
 
@@ -197,4 +218,7 @@ struct TmuxXWindowMapping {
 
     // Focus/active windows
     TmuxLocation m_active{-1, -1};
+
+    // Active location has a gui window which is overridden
+    bool m_overriden;
 };

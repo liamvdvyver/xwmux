@@ -91,6 +91,22 @@ struct WindowLayouts {
         m_bar_position = bar_position;
     }
 
+    constexpr WindowPosition add_bar(WindowPosition position) const {
+        if (m_bar_position == TmuxBarPosition::TOP) {
+            position.start.x++;
+            position.end.x++;
+        }
+        return position;
+    }
+
+    // Ignores bar
+    constexpr WindowPosition
+    term_to_screen_pos(const WindowPosition position) const {
+        return {.start = term_to_screen_pos(position.start),
+                .end = term_to_screen_pos(position.end)};
+    }
+
+
   private:
     enum class PaddingDistribution : uint8_t {
         START,
@@ -144,7 +160,6 @@ struct WindowLayouts {
     // Top left pixel of terminal character
     // Ignores bar
     constexpr Point term_to_screen_pos(const Point pixel_idx) const {
-        // without padding
         return {.x = term_to_screen_pos(pixel_idx.x, m_screen_resolution.width,
                                         m_term_resolution.width,
                                         m_term_char_resolution.width,

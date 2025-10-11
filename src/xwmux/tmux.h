@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <cstdlib>
 
-#include <iostream>
 #include <string>
 #include <sys/socket.h>
 #include <unordered_map>
@@ -18,7 +17,11 @@ using TmuxPaneID = int32_t;
 using TmuxLocation = std::pair<TmuxWindowID, TmuxPaneID>;
 
 constexpr void spawn_window() {
-    std::system("tmux new-window -n 'xwmux-app' 'sleep infinity'");
+    std::system("tmux new-window -n 'xwmux-app' ''");
+}
+
+constexpr void split_window() {
+    std::system("tmux split-window ''");
 }
 
 constexpr void send_message(std::string msg) {
@@ -41,7 +44,13 @@ struct TmuxWorkspace {
     void add_window(const XState &state, const TmuxPaneID tm_pane,
                     const Window window) {
         m_app_windows[tm_pane] = window;
-        state.term_layout.fullscreen_term_position().resize_to(state.display, window);
+        state.term_layout.fullscreen_term_position().resize_to(state.display,
+                                                               window);
+    }
+
+    void set_position(const XState &state, const TmuxPaneID tm_pane,
+                      const WindowPosition position) {
+        position.resize_to(state.display, m_app_windows[tm_pane]);
     }
 
     void erase_pane(const TmuxPaneID tm_pane) {
@@ -118,10 +127,10 @@ struct TmuxXWindowMapping {
         return m_workspaces.at(tm_window);
     }
 
-    const std::unordered_map<TmuxWindowID, TmuxWorkspace> &get_workspaces() const {
+    const std::unordered_map<TmuxWindowID, TmuxWorkspace> &
+    get_workspaces() const {
         return m_workspaces;
     }
-
 
     TmuxWorkspace &operator[](const TmuxWindowID tm_window) {
         return m_workspaces[tm_window];
@@ -145,9 +154,7 @@ struct TmuxXWindowMapping {
 
     bool filled() const { return filled(m_active); }
 
-    bool has_window(Window window) const {
-        return m_inverse_map.count(window);
-    }
+    bool has_window(Window window) const { return m_inverse_map.count(window); }
 
   private:
     void activate_window(const XState &state, TmuxWindowID tm_window) {
@@ -157,10 +164,10 @@ struct TmuxXWindowMapping {
             if (m_active.first >= 0) {
                 m_workspaces[m_active.first].hide(state);
             }
-
-            m_workspaces[tm_window].show(state);
-            m_active.first = tm_window;
         }
+
+        m_workspaces[tm_window].show(state);
+        m_active.first = tm_window;
     }
 
     void focus_pane(const XState &state, TmuxLocation location) {

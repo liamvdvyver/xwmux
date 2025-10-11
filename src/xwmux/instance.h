@@ -147,6 +147,15 @@ class WMInstance {
         // Pane should be killed normally on unmap notify.
     }
 
+    void set_position(TmuxLocation location, WindowPosition term_position) {
+        WindowPosition gui_position = m_xstate.term_layout.term_to_screen_pos(
+            m_xstate.term_layout.add_bar(term_position));
+        if (m_tmux_mapping.filled(location)) {
+            m_tmux_mapping[location.first].set_position(
+                m_xstate, location.second, gui_position);
+        }
+    }
+
     std::lock_guard<std::mutex> lock() {
         return std::lock_guard(m_event_mutex);
     }
@@ -244,7 +253,7 @@ class WMInstance {
                 } else {
                     m_window_q.push(w);
                     m_pending_windows.insert(w);
-                    spawn_window();
+                    split_window();
                 }
             }(ev.xmaprequest.window);
             break;
@@ -293,6 +302,9 @@ class WMInstance {
                     break;
                 case MsgType::KILL_PANE:
                     kill_pane_client();
+                case MsgType::TMUX_POSITION:
+                    set_position(msg.msg.pane_position.location,
+                                 msg.msg.pane_position.position);
                 }
             } else {
                 m_event_mutex.unlock();

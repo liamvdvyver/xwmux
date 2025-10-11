@@ -1,8 +1,9 @@
 #!/bin/env sh
 
-if [ -z "$1" ]; then
-    exit 1
-fi
+# Update focus
+msg=$(tmux display-message -p '#{q:session_id} #{window_id} #{pane_id}')
+eval xwmux-ctl tmux-focus "$msg" 2>/dev/null
 
-msg=$(tmux display-message -p '#{session_id}#{window_id}#{pane_id}')
-eval xwmux-ctl tmux-event "$1" \'"$msg"\' 2>/dev/null
+# Update layout
+tmux list-panes -F "#{q:session_id} #{window_id} #{pane_id} #{pane_left} #{pane_top} #{pane_width} #{pane_height}" |
+    xargs -d '\n' -I {} sh -c "xwmux-ctl tmux-position {}"

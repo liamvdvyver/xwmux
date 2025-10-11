@@ -17,8 +17,17 @@ if [ -z "$xwmux_sock" ]; then
     xwmux_sock="$xwmux_sock_default"
 fi
 
+session_name="default"
+
 rows=$(tput lines)
 cols=$(tput cols)
 
-xwmux-ctl res "$rows" "$cols"
-tmux new-session -A -s default
+if ! tmux list-sessions; then
+    tmux new-session -d -s "$session_name"
+fi
+
+status_position=$(tmux show-options -g status-position | cut -f 2 -d ' ')
+
+xwmux-ctl init "$rows" "$cols" "$status_position"
+
+tmux new-session -A -s "$session_name"

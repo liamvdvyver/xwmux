@@ -35,16 +35,26 @@ struct Command {
   private:
 };
 
-struct TellResolution : Command {
-    std::string keyword() override { return "res"; }
-    std::string usage_suffix() override { return " <rows> <cols>"; }
+struct InitLayout : Command {
+    std::string keyword() override { return "init"; }
+    std::string usage_suffix() override {
+        return " <rows> <cols> <bar-position>";
+    }
     std::optional<Msg> handle(int argc, char **argv, int cur) override {
-        if (cur + 2 != argc - 1) {
+        if (cur + 3 != argc - 1) {
             return std::nullopt;
         }
         std::size_t h = std::atoi(argv[cur + 1]);
         std::size_t w = std::atoi(argv[cur + 2]);
-        Msg msg(Resolution{w, h});
+
+        TmuxBarPosition pos = TmuxBarPosition::BOTTOM;
+        if (!std::strcmp("top", argv[cur + 3])) {
+            pos = TmuxBarPosition::TOP;
+        } else if (std::strcmp("bottom", argv[cur + 3])) {
+            std::cerr << "Bad bar position\n";
+        }
+
+        Msg msg(TermInitLayout{{w, h}, pos});
         return msg;
     }
 };
@@ -134,8 +144,8 @@ struct NotifyTmuxPosition : Command {
 };
 
 std::unique_ptr<Command> parse_cmd(std::string cmd) {
-    if (cmd == TellResolution().keyword()) {
-        return std::make_unique<TellResolution>();
+    if (cmd == InitLayout().keyword()) {
+        return std::make_unique<InitLayout>();
     } else if (cmd == Exit().keyword()) {
         return std::make_unique<Exit>();
     } else if (cmd == KillPane().keyword()) {

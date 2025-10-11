@@ -102,6 +102,10 @@ struct TmuxXWindowMapping {
         return m_workspaces[m_active.first][m_active.second];
     }
 
+    const TmuxWorkspace &current_workspace() const {
+        return m_workspaces.at(m_active.first);
+    }
+
     void add_window(const XState &state, const Window window,
                     const TmuxLocation location) {
         m_workspaces[location.first].add_window(state, location.second, window);

@@ -11,7 +11,14 @@ struct XState {
           screen(XDefaultScreenOfDisplay(display)), resolution(display),
           term_layout(display, Resolution()) {}
 
-    void refresh_resolution() { resolution = {display}; }
+    void set_resolution(Resolution res) {
+        resolution = res;
+        term_layout.set_screen_resolution(resolution);
+        if (term.has_value()) {
+            res.fullscreen().resize_to(display, term.value());
+        }
+        set_term(term.value());
+    }
 
     void set_term(Window term) { this->term = term; }
     void focus_term() { XSetInputFocus(display, term.value_or(root), 0, 0); }

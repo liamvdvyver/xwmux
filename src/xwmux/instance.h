@@ -50,7 +50,8 @@ class WMInstance {
         XSetErrorHandler(*startup_error_handler);
 
         XSelectInput(m_xstate.display, m_xstate.root,
-                     SubstructureRedirectMask | SubstructureNotifyMask);
+                     StructureNotifyMask | SubstructureRedirectMask |
+                         SubstructureNotifyMask);
 
         sync();
 
@@ -98,8 +99,9 @@ class WMInstance {
         m_msg_q.push(msg);
     }
 
-    void set_term_resolution(Resolution resoltuion) {
+    void set_term_layout(Resolution resoltuion, TmuxBarPosition bar_position) {
         m_xstate.term_layout.set_term_resolution(resoltuion);
+        m_xstate.term_layout.set_bar_position(bar_position);
     }
 
     void stop() {
@@ -230,25 +232,35 @@ class WMInstance {
         return attr.override_redirect;
     }
 
+    void close_term() {
+        // Close current window
+        if (m_xstate.term.has_value()) {
+            XKillClient(m_xstate.display, m_xstate.term.value());
+        }
+    }
+
     // If the window has appropriate class name,
     void set_term(Window id) {
 
-        // Close current window
-        if (m_xstate.term) {
-            XKillClient(m_xstate.display, m_xstate.term.value());
-        }
+        close_term();
 
         // Use new window as root
         m_xstate.term = id;
     }
 
-    void handle_event(XEvent ev) {
+    void handle_event(const XEvent &ev) {
         switch (ev.type) {
         case CreateNotify:
             break;
         case ConfigureRequest:
             break;
         case ConfigureNotify:
+            if (ev.xconfigure.window == m_xstate.root) {
+                m_xstate.set_resolution(
+                    {static_cast<size_t>(ev.xconfigure.width),
+                     static_cast<size_t>(ev.xconfigure.height)});
+                close_term();
+            }
             break;
         case MapRequest:
             [&](Window w) {
@@ -301,7 +313,8 @@ class WMInstance {
 
                 switch (msg.type) {
                 case MsgType::RESOLUTION:
-                    set_term_resolution(msg.msg.resolution);
+                    set_term_layout(msg.msg.term_init_layout.term_resolution,
+                                    msg.msg.term_init_layout.bar_position);
                     break;
                 case MsgType::EXIT:
                     stop();

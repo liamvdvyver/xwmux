@@ -3,7 +3,6 @@
 #include <X11/Xlib.h>
 #include <cstddef>
 #include <cstdint>
-#include <string>
 #include <utility>
 
 struct Point {

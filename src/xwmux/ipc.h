@@ -9,6 +9,11 @@
 
 enum class MsgType { RESOLUTION, EXIT, TMUX_POSITION, KILL_PANE };
 
+struct TermInitLayout {
+    Resolution term_resolution;
+    TmuxBarPosition bar_position;
+};
+
 struct TmuxPanePosition {
     TmuxLocation location;
     WindowPosition position;
@@ -17,7 +22,7 @@ struct TmuxPanePosition {
 
 union MsgBody {
     int null_msg;
-    Resolution resolution;
+    TermInitLayout term_init_layout;
     TmuxPanePosition pane_position;
     TmuxPaneID kill_pane;
 };
@@ -25,7 +30,9 @@ union MsgBody {
 struct Msg {
 
     Msg(MsgType type) : type(type) {};
-    Msg(Resolution res) : type(MsgType::RESOLUTION) { msg.resolution = res; };
+    Msg(TermInitLayout init_layout) : type(MsgType::RESOLUTION) {
+        msg.term_init_layout = init_layout;
+    };
 
     Msg(TmuxPanePosition pane_position) : type(MsgType::TMUX_POSITION) {
         msg.pane_position = pane_position;

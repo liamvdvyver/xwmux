@@ -121,7 +121,7 @@ class WMInstance {
         }
 
         // Have window to add
-        if (!m_window_q.empty() && !m_tmux_mapping.filled(location)) {
+        if (!m_window_q.empty() && !m_tmux_mapping.is_filled(location)) {
 
             Window window = m_window_q.front();
             m_window_q.pop();
@@ -161,7 +161,7 @@ class WMInstance {
 
     // Kills the focused client, if any
     void kill_pane_client() {
-        if (m_tmux_mapping.filled()) {
+        if (m_tmux_mapping.is_filled()) {
             kill_client(m_tmux_mapping.current_window());
         }
         // Pane should be killed normally on unmap notify.
@@ -174,7 +174,7 @@ class WMInstance {
         WindowPosition gui_position = m_xstate.term_layout.term_to_screen_pos(
             m_xstate.term_layout.add_bar(term_position));
 
-        if (m_tmux_mapping.filled(location)) {
+        if (m_tmux_mapping.is_filled(location)) {
             m_tmux_mapping[location.first][location.second].set_position(
                 m_xstate, gui_position);
         }
@@ -190,7 +190,7 @@ class WMInstance {
             ev.xkey.window = m_tmux_mapping.current_window();
 
             // If gui has focus
-        } else if (m_tmux_mapping.filled()) {
+        } else if (m_tmux_mapping.is_filled()) {
 
             if (!m_xstate.term.has_value()) {
                 return;
@@ -349,7 +349,7 @@ class WMInstance {
             // If originated from xwmux
             {
                 if (m_tmux_mapping.has_window(ev.xunmap.window) &&
-                    !m_tmux_mapping.hidden(ev.xunmap.window)) {
+                    !m_tmux_mapping.is_hidden(ev.xunmap.window)) {
                     notify("unmapped");
                     m_tmux_mapping.remove_window(ev.xunmap.window);
                     m_xstate.focus_term();

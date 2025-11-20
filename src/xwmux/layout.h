@@ -1,7 +1,9 @@
 #pragma once
 
+extern "C" {
 #include <X11/Xlib.h>
-#include <cstddef>
+}
+
 #include <cstdint>
 #include <utility>
 
@@ -23,13 +25,13 @@ struct WindowPosition {
 
 struct Resolution {
     Resolution() : width(1), height(1) {}
-    Resolution(size_t width, size_t height) : width(width), height(height) {}
+    Resolution(const size_t width, const size_t height) : width(width), height(height) {}
 
-    Resolution(Display *display)
+    Resolution(Display *const display)
         : width(XDisplayWidth(display, 0)), height(XDisplayHeight(display, 0)) {
     }
 
-    WindowPosition fullscreen() {
+    WindowPosition fullscreen() const {
         return {.start = {0, 0}, .end = {width, height}};
     }
 
@@ -46,7 +48,7 @@ enum class TmuxBarPosition : bool {
 // i.e. even over x axis, all on bottom on y axis
 struct WindowLayouts {
 
-    WindowLayouts(Display *display, Resolution terminal_resolution)
+    WindowLayouts(Display *const display, const Resolution terminal_resolution)
         : m_screen_resolution(display), m_term_resolution(terminal_resolution),
           m_bar_position(TmuxBarPosition::BOTTOM),
           m_x_padding_distribution(PaddingDistribution::EVEN),

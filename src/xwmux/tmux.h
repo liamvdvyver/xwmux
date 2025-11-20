@@ -1,12 +1,11 @@
+/*
+* Internal represetntations of tmux state, and helpers for interacting with tmux
+* via cli.
+*/
+
 #pragma once
 
-#include <X11/Xlib.h>
-#include <cassert>
-#include <cstdint>
-#include <cstdlib>
-
 #include <string>
-#include <sys/socket.h>
 #include <unordered_map>
 
 #include "xwrapper.h"
@@ -16,30 +15,15 @@ using TmuxPaneID = int32_t;
 
 using TmuxLocation = std::pair<TmuxWindowID, TmuxPaneID>;
 
-constexpr void spawn_window() {
-    std::system("tmux new-window -n 'xwmux-app' ''");
-}
+void spawn_window();
 
-constexpr void split_window() { std::system("tmux split-window ''"); }
+void split_window();
 
-constexpr void send_message(std::string msg) {
-    std::string tmux_msg = "tmux display-message '";
-    tmux_msg.append(msg);
-    tmux_msg.push_back('\'');
-    std::system(tmux_msg.c_str());
-};
+void send_message(std::string msg);
 
-constexpr void kill_pane(const TmuxPaneID tm_pane) {
-    std::string msg = "tmux kill-pane -t %";
-    msg.append(std::to_string(tm_pane));
-    std::system(msg.c_str());
-}
+void kill_pane(const TmuxPaneID tm_pane);
 
-constexpr void focus_location(const TmuxPaneID tm_pane) {
-    std::string msg = "tmux select-pane -t %";
-    msg.append(std::to_string(tm_pane));
-    std::system(msg.c_str());
-}
+void focus_location(const TmuxPaneID tm_pane);
 
 // Represents a tmux pane containing an X11 window
 struct WindowPane {
@@ -52,7 +36,7 @@ struct WindowPane {
     Window get_window() const { return m_window; }
     void set_window(const Window window) { m_window = window; }
 
-    bool hidden() const { return m_hidden; }
+    bool is_hidden() const { return m_hidden; }
 
     void show(const XState &state) {
         XMapWindow(state.display, m_window);
@@ -132,9 +116,7 @@ struct Workspace {
 struct TmuxXWindowMapping {
 
   public:
-    // default c'tor
-
-    TmuxLocation get_active() const { return m_active; }
+    std::optional<TmuxLocation> get_active() const { return m_active; }
 
     Window current_window() const {
         return m_workspaces.at(m_active.first)[m_active.second].get_window();
@@ -214,28 +196,30 @@ struct TmuxXWindowMapping {
     }
 
     void set_active(const XState &state, const TmuxLocation location,
-                    bool zoomed = false) {
+                    const bool zoomed = false) {
         activate_window(state, location.first,
                         zoomed ? std::optional(location.second) : std::nullopt);
         focus_pane(state, location);
     }
 
-    bool filled(TmuxLocation location) const {
+    bool is_filled(const TmuxLocation location) const {
         return m_workspaces.count(location.first) &&
                m_workspaces.at(location.first)
                    .get_windows()
                    .count(location.second);
     }
 
-    bool filled() const { return filled(m_active); }
+    bool is_filled() const { return is_filled(m_active); }
 
-    bool has_window(Window window) const { return m_inverse_map.count(window); }
+    bool has_window(const Window window) const {
+        return m_inverse_map.count(window);
+    }
 
     // Does not check for membership
-    bool hidden(Window window) const {
+    bool is_hidden(const Window window) const {
         TmuxPaneID p = m_inverse_map.at(window);
         TmuxWindowID w = m_inverse_tm_map.at(p);
-        return m_workspaces.at(w)[p].hidden();
+        return m_workspaces.at(w)[p].is_hidden();
     }
 
     // Sets the override flag
@@ -268,7 +252,7 @@ struct TmuxXWindowMapping {
     }
 
     // Clears override if switch takes place
-    void focus_pane(const XState &state, TmuxLocation location,
+    void focus_pane(const XState &state, const TmuxLocation location,
                     bool redundant_refocus = false) {
 
         if (m_active != location || redundant_refocus) {

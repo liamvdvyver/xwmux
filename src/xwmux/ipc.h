@@ -1,8 +1,6 @@
 #pragma once
 
-#include <cstdint>
-#include <layout.h>
-
+#include "layout.h"
 #include "tmux.h"
 #include "xwrapper.h"
 
@@ -35,15 +33,15 @@ struct Msg {
     Msg(MsgType type) : type(type) {};
     Msg(TermInitLayout init_layout) : type(MsgType::RESOLUTION) {
         msg.term_init_layout = init_layout;
-    };
+    }
 
     Msg(TmuxPanePosition pane_position) : type(MsgType::TMUX_POSITION) {
         msg.pane_position = pane_position;
-    };
+    }
 
     Msg(TmuxPaneID tmux_pane) : type(MsgType::KILL_PANE) {
         msg.kill_pane = tmux_pane;
-    };
+    }
 
     MsgType type;
     MsgBody msg{};

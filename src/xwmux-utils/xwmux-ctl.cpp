@@ -110,11 +110,12 @@ struct KillPane : Command {
 struct NotifyTmuxPosition : Command {
     std::string keyword() override { return "tmux-position"; }
     std::string usage_suffix() override {
-        return " focused $<session-id> @<window-id> %<pane-id> pane_left "
+        return " focused zoomed $<session-id> @<window-id> %<pane-id> "
+               "pane_left "
                "pane_top pane_width pane_height";
     }
     std::optional<Msg> handle(int argc, char **argv, int cur) override {
-        if (cur + 8 != argc - 1) {
+        if (cur + 9 != argc - 1) {
             std::cout << "wrong args\n";
             return std::nullopt;
         }
@@ -122,6 +123,7 @@ struct NotifyTmuxPosition : Command {
 
         try {
             bool focused = std::stoi(argv[cur++]);
+            bool zoomed = std::stoi(argv[cur++]);
 
             std::optional<TmuxLocation> loc = get_loc(argc, argv, cur);
             if (!loc.has_value()) {
@@ -141,7 +143,8 @@ struct NotifyTmuxPosition : Command {
                 .position = WindowPosition(
                     {pane_left, pane_top},
                     {pane_left + pane_width, pane_top + pane_height}),
-                .focused = focused};
+                .focused = focused,
+                .zoomed = zoomed};
 
         } catch (std::invalid_argument e) {
             std::cout << "couldn't get rest\n";

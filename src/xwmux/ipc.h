@@ -20,6 +20,7 @@ struct TmuxPanePosition {
     TmuxLocation location;
     WindowPosition position;
     bool focused = false;
+    bool zoomed = false;
 };
 
 union MsgBody {

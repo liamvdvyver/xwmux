@@ -3,7 +3,7 @@
 #include <X11/Xlib.h>
 #include <cassert>
 #include <cstdint>
-#include <cstdlib> 
+#include <cstdlib>
 
 #include <string>
 #include <sys/socket.h>
@@ -91,12 +91,12 @@ struct Workspace {
         }
     }
 
-    WindowPane at(const TmuxWindowID tm_window) const {
-        return m_app_windows.at(tm_window);
-    }
-
     WindowPane &operator[](const TmuxWindowID tm_window) {
         return m_app_windows[tm_window];
+    }
+
+    const WindowPane operator[](const TmuxWindowID tm_window) const {
+        return m_app_windows.at(tm_window);
     }
 
     const std::unordered_map<TmuxPaneID, WindowPane> &get_windows() const {
@@ -106,6 +106,16 @@ struct Workspace {
     void show(const XState &state) {
         for (auto &[p, w] : m_app_windows) {
             w.show(state);
+        }
+    }
+
+    void show(const XState &state, const TmuxPaneID zoomed) {
+        for (auto &[p, w] : m_app_windows) {
+            if (p == zoomed) {
+                w.show(state);
+            } else {
+                w.hide(state);
+            }
         }
     }
 
@@ -127,7 +137,7 @@ struct TmuxXWindowMapping {
     TmuxLocation get_active() const { return m_active; }
 
     Window current_window() const {
-        return m_workspaces.at(m_active.first).at(m_active.second).get_window();
+        return m_workspaces.at(m_active.first)[m_active.second].get_window();
     }
 
     Window current_window() {
@@ -162,27 +172,36 @@ struct TmuxXWindowMapping {
             kill_pane(tm_pane);
         }
     }
-    
-    // void move_pane(const TmuxPaneID pane, const TmuxWindowID new_window) {
-    //     if (m_inverse_tm_map.count(pane) && m_inverse_tm_map[pane] != new_window) {
-    //         const TmuxWindowID old_window = m_inverse_tm_map[pane];
-    //         const WindowPane wp = m_workspaces[old_window][pane];
-    //
-    //         m_workspaces[old_window].erase_pane(pane);
-    //         if (m_workspaces[old_window].get_windows().empty()) {
-    //             m_workspaces.erase(old_window);
-    //         }
-    //
-    //         m_workspaces[new_window][pane] = wp;
-    //     }
-    // }
+
+    void move_pane(const TmuxLocation loc) {
+        const TmuxPaneID new_window = loc.first;
+        const TmuxPaneID pane = loc.second;
+        if (m_inverse_tm_map.count(pane) &&
+            m_inverse_tm_map[pane] != new_window) {
+
+            // Get panes
+            const TmuxWindowID old_window = m_inverse_tm_map[pane];
+            if (m_workspaces[old_window].get_windows().count(pane)) {
+                const WindowPane wp = m_workspaces[old_window][pane];
+
+                // Remove pane from old workspace
+                m_workspaces[old_window].erase_pane(pane);
+                if (m_workspaces[old_window].get_windows().empty()) {
+                    m_workspaces.erase(old_window);
+                }
+
+                // Add pane to new workspace
+                m_workspaces[new_window][pane] = wp;
+                m_inverse_tm_map[pane] = new_window;
+            }
+        }
+    }
 
     const Workspace &get_workspace(const TmuxWindowID tm_window) const {
         return m_workspaces.at(tm_window);
     }
 
-    const std::unordered_map<TmuxWindowID, Workspace> &
-    get_workspaces() const {
+    const std::unordered_map<TmuxWindowID, Workspace> &get_workspaces() const {
         return m_workspaces;
     }
 
@@ -194,8 +213,10 @@ struct TmuxXWindowMapping {
         return m_workspaces[location.first][location.second].get_window();
     }
 
-    void set_active(const XState &state, const TmuxLocation location) {
-        activate_window(state, location.first);
+    void set_active(const XState &state, const TmuxLocation location,
+                    bool zoomed = false) {
+        activate_window(state, location.first,
+                        zoomed ? std::optional(location.second) : std::nullopt);
         focus_pane(state, location);
     }
 
@@ -214,7 +235,7 @@ struct TmuxXWindowMapping {
     bool hidden(Window window) const {
         TmuxPaneID p = m_inverse_map.at(window);
         TmuxWindowID w = m_inverse_tm_map.at(p);
-        return m_workspaces.at(w).at(p).hidden();
+        return m_workspaces.at(w)[p].hidden();
     }
 
     // Sets the override flag
@@ -228,7 +249,8 @@ struct TmuxXWindowMapping {
     bool overridden() const { return m_overriden; }
 
   private:
-    void activate_window(const XState &state, TmuxWindowID tm_window) {
+    void activate_window(const XState &state, TmuxWindowID tm_window,
+                         std::optional<TmuxPaneID> zoomed_pane) {
         if (m_active.first != tm_window) {
 
             // Deactivate old
@@ -237,7 +259,11 @@ struct TmuxXWindowMapping {
             }
         }
 
-        m_workspaces[tm_window].show(state);
+        if (zoomed_pane.has_value()) {
+            m_workspaces[tm_window].show(state, zoomed_pane.value());
+        } else {
+            m_workspaces[tm_window].show(state);
+        }
         m_active.first = tm_window;
     }
 
@@ -252,9 +278,10 @@ struct TmuxXWindowMapping {
                 m_workspaces[location.first].get_windows().count(
                     location.second);
 
-            Window target = has_x_window
-                                ? m_workspaces[location.first][location.second].get_window()
-                                : state.term.value_or(state.root);
+            Window target =
+                has_x_window
+                    ? m_workspaces[location.first][location.second].get_window()
+                    : state.term.value_or(state.root);
 
             XSetInputFocus(state.display, target, 0, 0);
             m_active.second = location.second;

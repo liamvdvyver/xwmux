@@ -114,7 +114,7 @@ class WMInstance {
         exit(EXIT_SUCCESS);
     }
 
-    void focus_tmux(TmuxLocation location) {
+    void focus_tmux(TmuxLocation location, bool zoomed = false) {
 
         if (m_ignore_focus) {
             return;
@@ -139,7 +139,8 @@ class WMInstance {
         }
 
         notify("Setting active");
-        m_tmux_mapping.set_active(m_xstate, location);
+        if (zoomed) notify("Zoomed");
+        m_tmux_mapping.set_active(m_xstate, location, zoomed);
         notify("Set active");
     }
 
@@ -172,8 +173,6 @@ class WMInstance {
     void set_position(TmuxLocation location, WindowPosition term_position) {
         WindowPosition gui_position = m_xstate.term_layout.term_to_screen_pos(
             m_xstate.term_layout.add_bar(term_position));
-
-        // m_tmux_mapping.move_pane(location.second, location.first);
 
         if (m_tmux_mapping.filled(location)) {
             m_tmux_mapping[location.first][location.second].set_position(
@@ -349,7 +348,8 @@ class WMInstance {
         case UnmapNotify:
             // If originated from xwmux
             {
-                if (m_tmux_mapping.has_window(ev.xunmap.window) && !m_tmux_mapping.hidden(ev.xunmap.window)) {
+                if (m_tmux_mapping.has_window(ev.xunmap.window) &&
+                    !m_tmux_mapping.hidden(ev.xunmap.window)) {
                     notify("unmapped");
                     m_tmux_mapping.remove_window(ev.xunmap.window);
                     m_xstate.focus_term();
@@ -400,8 +400,11 @@ class WMInstance {
                 case MsgType::KILL_PANE:
                     kill_pane_client();
                 case MsgType::TMUX_POSITION:
+                    m_tmux_mapping.move_pane(msg.msg.pane_position.location);
                     if (msg.msg.pane_position.focused) {
-                        focus_tmux(msg.msg.pane_position.location);
+                                if (msg.msg.pane_position.zoomed)  notify("Zoome 2");
+                        focus_tmux(msg.msg.pane_position.location,
+                                   msg.msg.pane_position.zoomed);
                     }
                     set_position(msg.msg.pane_position.location,
                                  msg.msg.pane_position.position);
@@ -409,7 +412,8 @@ class WMInstance {
             } else {
 
                 // Check for transtion to iconic
-                if (static_cast<Atom>(ev.xclient.type) == XInternAtom(m_xstate.display, "WM_CHANGE_STATE", false)) {
+                if (static_cast<Atom>(ev.xclient.type) ==
+                    XInternAtom(m_xstate.display, "WM_CHANGE_STATE", false)) {
                     notify("Change state!!");
                 };
 

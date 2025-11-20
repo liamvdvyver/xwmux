@@ -138,7 +138,9 @@ class WMInstance {
             }
         }
 
+        notify("Setting active");
         m_tmux_mapping.set_active(m_xstate, location);
+        notify("Set active");
     }
 
     void kill_client(Window window) {
@@ -164,12 +166,18 @@ class WMInstance {
         // Pane should be killed normally on unmap notify.
     }
 
+    // Moves the (possible window) at location to term_position
+    // If pane doesn't have a window, do nothing
+    // If pane is in seperate window, moves the pane
     void set_position(TmuxLocation location, WindowPosition term_position) {
         WindowPosition gui_position = m_xstate.term_layout.term_to_screen_pos(
             m_xstate.term_layout.add_bar(term_position));
+
+        // m_tmux_mapping.move_pane(location.second, location.first);
+
         if (m_tmux_mapping.filled(location)) {
-            m_tmux_mapping[location.first].set_position(
-                m_xstate, location.second, gui_position);
+            m_tmux_mapping[location.first][location.second].set_position(
+                m_xstate, gui_position);
         }
     }
 
@@ -268,6 +276,12 @@ class WMInstance {
         return ret;
     }
 
+    constexpr bool iconic(Window id) {
+        XWindowAttributes attr;
+        XGetWindowAttributes(m_xstate.display, id, &attr);
+        return attr.map_state == IconicState;
+    }
+
     constexpr bool override_redirect(Window id) {
         XWindowAttributes attr;
         XGetWindowAttributes(m_xstate.display, id, &attr);
@@ -314,7 +328,12 @@ class WMInstance {
                     XMapWindow(m_xstate.display, w);
                     m_xstate.set_term(w);
                     m_xstate.focus_term();
-                } else {
+                } else if (!m_pending_windows.count(w) && !iconic(w)) {
+
+                    std::string msg = "map request: ";
+                    msg.append(std::to_string(w));
+                    notify(msg);
+
                     m_window_q.push(w);
                     m_pending_windows.insert(w);
                     split_window();
@@ -328,6 +347,16 @@ class WMInstance {
         case Expose:
             break;
         case UnmapNotify:
+            // If originated from xwmux
+            {
+                if (m_tmux_mapping.has_window(ev.xunmap.window) && !m_tmux_mapping.hidden(ev.xunmap.window)) {
+                    notify("unmapped");
+                    m_tmux_mapping.remove_window(ev.xunmap.window);
+                    m_xstate.focus_term();
+                } else {
+                    m_pending_windows.erase(ev.xunmap.window);
+                }
+            }
             break;
         case DestroyNotify:
             if (ev.xdestroywindow.window == m_xstate.term) {
@@ -378,6 +407,12 @@ class WMInstance {
                                  msg.msg.pane_position.position);
                 }
             } else {
+
+                // Check for transtion to iconic
+                if (static_cast<Atom>(ev.xclient.type) == XInternAtom(m_xstate.display, "WM_CHANGE_STATE", false)) {
+                    notify("Change state!!");
+                };
+
                 m_event_mutex.unlock();
             }
             break;

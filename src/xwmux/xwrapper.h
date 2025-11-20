@@ -6,10 +6,8 @@
 #include "layout.h"
 
 struct ModifiedKeyCode {
-    ModifiedKeyCode(
-        const KeyCode keycode,
-        const uint modifiers
-    ) : keycode(keycode), modifiers(modifiers) {}
+    ModifiedKeyCode(const KeyCode keycode, const uint modifiers)
+        : keycode(keycode), modifiers(modifiers) {}
 
     KeyCode keycode;
     uint modifiers;
@@ -26,8 +24,8 @@ struct XState {
         term_layout.set_screen_resolution(resolution);
         if (term.has_value()) {
             res.fullscreen().resize_to(display, term.value());
+            set_term(term.value());
         }
-        set_term(term.value());
     }
 
     void set_term(Window term) { this->term = term; }

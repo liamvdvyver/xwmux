@@ -16,7 +16,7 @@
 
 #include <X11/keysymdef.h>
 
-static const std::unordered_map<std::string, KeySym> tmux_key_maps{
+const std::unordered_map<std::string, KeySym> tmux_key_maps{
     {"F1", XK_F1},
     {"F2", XK_F2},
     {"F3", XK_F3},

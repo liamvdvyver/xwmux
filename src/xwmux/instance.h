@@ -139,7 +139,8 @@ class WMInstance {
         }
 
         notify("Setting active");
-        if (zoomed) notify("Zoomed");
+        if (zoomed)
+            notify("Zoomed");
         m_tmux_mapping.set_active(m_xstate, location, zoomed);
         notify("Set active");
     }
@@ -348,11 +349,16 @@ class WMInstance {
         case UnmapNotify:
             // If originated from xwmux
             {
-                if (m_tmux_mapping.has_window(ev.xunmap.window) &&
-                    !m_tmux_mapping.is_hidden(ev.xunmap.window)) {
-                    notify("unmapped");
-                    m_tmux_mapping.remove_window(ev.xunmap.window);
-                    m_xstate.focus_term();
+                if (m_tmux_mapping.has_window(ev.xunmap.window)) {
+                    WindowPane &wp =
+                        m_tmux_mapping.get(ev.xunmap.window);
+                    if (wp.unmap_pending()) {
+                        wp.notify_unmapped();
+                    } else {
+                        notify("unmapped");
+                        m_tmux_mapping.remove_window(ev.xunmap.window);
+                        m_xstate.focus_term();
+                    }
                 } else {
                     m_pending_windows.erase(ev.xunmap.window);
                 }
@@ -402,7 +408,8 @@ class WMInstance {
                 case MsgType::TMUX_POSITION:
                     m_tmux_mapping.move_pane(msg.msg.pane_position.location);
                     if (msg.msg.pane_position.focused) {
-                                if (msg.msg.pane_position.zoomed)  notify("Zoome 2");
+                        if (msg.msg.pane_position.zoomed)
+                            notify("Zoome 2");
                         focus_tmux(msg.msg.pane_position.location,
                                    msg.msg.pane_position.zoomed);
                     }

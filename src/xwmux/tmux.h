@@ -38,6 +38,10 @@ struct WindowPane {
 
     bool is_hidden() const { return m_hidden; }
 
+    bool unmap_pending() const { return m_unmap_req_count; }
+
+    void notify_unmapped() { m_unmap_req_count--; }
+
     void show(const XState &state) {
         XMapWindow(state.display, m_window);
         m_hidden = false;
@@ -46,6 +50,7 @@ struct WindowPane {
     void hide(const XState &state) {
         XUnmapWindow(state.display, m_window);
         m_hidden = true;
+        m_unmap_req_count++;
     }
 
     void set_position(const XState &state, const WindowPosition &pos) {
@@ -55,6 +60,10 @@ struct WindowPane {
   private:
     Window m_window;
     bool m_hidden;
+
+    // To differentiate unmap notifications originating from xwmux and the
+    // application, keep track of the number of pending unmap requests.
+    size_t m_unmap_req_count;
 };
 
 // Represents a tmux window and all associated WindowPanes
@@ -191,8 +200,8 @@ struct TmuxXWindowMapping {
         return m_workspaces[tm_window];
     }
 
-    Window operator[](const TmuxLocation location) {
-        return m_workspaces[location.first][location.second].get_window();
+    WindowPane &operator[](const TmuxLocation location) {
+        return m_workspaces[location.first][location.second];
     }
 
     void set_active(const XState &state, const TmuxLocation location,
@@ -214,6 +223,14 @@ struct TmuxXWindowMapping {
     bool has_window(const Window window) const {
         return m_inverse_map.count(window);
     }
+
+    TmuxLocation find(const Window window) const {
+        const TmuxPaneID p = m_inverse_map.at(window);
+        const TmuxWindowID w = m_inverse_tm_map.at(p);
+        return {w, p};
+    }
+
+    WindowPane &get(const Window window) { return (*this)[find(window)]; }
 
     // Does not check for membership
     bool is_hidden(const Window window) const {

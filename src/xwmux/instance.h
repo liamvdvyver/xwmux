@@ -1,9 +1,12 @@
 #pragma once
 
+extern "C" {
 #include <X11/X.h>
+#include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/cursorfont.h>
+}
 
 #include <atomic>
 #include <cassert>
@@ -135,6 +138,7 @@ class WMInstance {
             } else {
                 m_tmux_mapping.add_window(m_xstate, window, location);
                 m_pending_windows.erase(window);
+                name_client(window, location.second);
             }
         }
 
@@ -143,6 +147,15 @@ class WMInstance {
             notify("Zoomed");
         m_tmux_mapping.set_active(m_xstate, location, zoomed);
         notify("Set active");
+    }
+
+    void name_client(Window window, TmuxPaneID pane) {
+        XTextProperty name;
+        XGetWMName(m_xstate.display, window, &name);
+        std::string_view name_v(reinterpret_cast<char *>(name.value),
+                                name.nitems);
+        name_pane(pane, name_v);
+        XFree(name.value);
     }
 
     void kill_client(Window window) {
@@ -337,6 +350,9 @@ class WMInstance {
                     m_window_q.push(w);
                     m_pending_windows.insert(w);
                     split_window();
+
+                    // Watch for name changes
+                    XSelectInput(m_xstate.display, w, PropertyChangeMask);
                 }
             }(ev.xmaprequest.window);
             break;
@@ -350,8 +366,7 @@ class WMInstance {
             // If originated from xwmux
             {
                 if (m_tmux_mapping.has_window(ev.xunmap.window)) {
-                    WindowPane &wp =
-                        m_tmux_mapping.get(ev.xunmap.window);
+                    WindowPane &wp = m_tmux_mapping.get(ev.xunmap.window);
                     if (wp.unmap_pending()) {
                         wp.notify_unmapped();
                     } else {
@@ -425,6 +440,15 @@ class WMInstance {
                 };
 
                 m_event_mutex.unlock();
+            }
+            break;
+        case PropertyNotify:
+            if (m_tmux_mapping.has_window(ev.xproperty.window) &&
+                ev.xproperty.atom ==
+                    XInternAtom(m_xstate.display, "WM_NAME", 0)) {
+                TmuxPaneID pane =
+                    m_tmux_mapping.find(ev.xproperty.window).second;
+                name_client(ev.xproperty.window, pane);
             }
             break;
         default:

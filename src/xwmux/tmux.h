@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include <string>
+#include <string_view>
 #include <unordered_map>
 
 #include "xwrapper.h"
@@ -19,11 +19,13 @@ void spawn_window();
 
 void split_window();
 
-void send_message(std::string msg);
+void send_message(std::string_view msg);
 
 void kill_pane(const TmuxPaneID tm_pane);
 
 void focus_location(const TmuxPaneID tm_pane);
+
+void name_pane(const TmuxPaneID tm_pane, const std::string_view name);
 
 // Represents a tmux pane containing an X11 window
 struct WindowPane {

@@ -7,7 +7,7 @@ void spawn_window() { std::system("tmux new-window -n 'xwmux-app' ''"); }
 
 void split_window() { std::system("tmux split-window ''"); }
 
-void send_message(std::string_view msg) {
+void send_message(const std::string_view msg) {
     std::string tmux_msg = "tmux display-message '";
     tmux_msg.append(msg);
     tmux_msg.push_back('\'');

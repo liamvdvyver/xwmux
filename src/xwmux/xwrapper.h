@@ -22,7 +22,7 @@ struct XState {
           screen(XDefaultScreenOfDisplay(display)), resolution(display),
           term_layout(display, Resolution()) {}
 
-    void set_resolution(Resolution res) {
+    void set_resolution(const Resolution res) {
         resolution = res;
         term_layout.set_screen_resolution(resolution);
         if (term.has_value()) {
@@ -31,10 +31,10 @@ struct XState {
         }
     }
 
-    void set_term(Window term) { this->term = term; }
-    void focus_term() { XSetInputFocus(display, term.value_or(root), 0, 0); }
+    void set_term(const Window term) { this->term = term; }
+    void focus_term() const { XSetInputFocus(display, term.value_or(root), 0, 0); }
 
-    void set_prefix(ModifiedKeyCode new_prefix) {
+    void set_prefix(const ModifiedKeyCode new_prefix) {
         if (prefix.has_value()) {
             XUngrabKey(display, prefix->keycode, prefix->modifiers, root);
         }

@@ -7,7 +7,6 @@ message("Compiler Version: ${CMAKE_CXX_COMPILER} ${CMAKE_CXX_COMPILER_VERSION}")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_compile_options(-std=c++23 -O3 -flto=auto -march=native -fomit-frame-pointer -Wall -Wextra -Wpedantic -DNDEBUG)
-# add_compile_options(-std=c++23 -Og -flto=auto -march=native -fomit-frame-pointer -Wall -Wextra -Wpedantic -g)
 add_link_options(-fuse-ld=lld)
 
 # X11
@@ -26,6 +25,5 @@ file(GLOB SOURCES
 
 add_executable(xwmux ${SOURCES})
 add_executable(xwmux-ctl xwmux-utils/xwmux-ctl.cpp)
-add_executable(xwmux-win xwmux-utils/xwmux-win.cpp)
 
-install(TARGETS xwmux xwmux-ctl xwmux-win)
+install(TARGETS xwmux xwmux-ctl)

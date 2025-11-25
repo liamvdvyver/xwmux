@@ -8,19 +8,15 @@ extern "C" {
 #include <X11/cursorfont.h>
 }
 
-#include <atomic>
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
-#include <mutex>
-#include <pthread.h>
 #include <queue>
 #include <unordered_set>
 
 #include "ipc.h"
 #include "layout.h"
-#include "listen.h"
 #include "tmux.h"
 
 constexpr void notify(std::string_view msg) {
@@ -73,34 +69,22 @@ class WMInstance {
 
         XEvent ev;
 
-        // run listener
-        pthread_t listener;
-        pthread_create(&listener, nullptr, Listener::operator(), (void *)this);
-
         // set cursor
         XDefineCursor(m_xstate.display, m_xstate.root,
                       XCreateFontCursor(m_xstate.display, XC_left_ptr));
 
-        while (!m_stop.load(std::memory_order_relaxed)) {
+        while (!m_stop) {
 
             // Handle event
             XNextEvent(m_xstate.display, &ev);
             handle_event(ev);
             sync();
         }
-
-        // Kill listener
-        pthread_join(listener, nullptr);
     };
 
     //--- Handle IPC events --------------------------------------------------//
 
     const XState &get_xstate() { return m_xstate; }
-
-    void push_msg(Msg msg) {
-        std::lock_guard lk = lock();
-        m_msg_q.push(msg);
-    }
 
     void set_term_layout(Resolution resoltuion, TmuxBarPosition bar_position) {
         m_xstate.term_layout.set_term_resolution(resoltuion);
@@ -142,11 +126,7 @@ class WMInstance {
             }
         }
 
-        notify("Setting active");
-        if (zoomed)
-            notify("Zoomed");
         m_tmux_mapping.set_active(m_xstate, location, zoomed);
-        notify("Set active");
     }
 
     void name_client(Window window, TmuxPaneID pane) {
@@ -228,25 +208,17 @@ class WMInstance {
         }
     }
 
-    std::lock_guard<std::mutex> lock() {
-        return std::lock_guard(m_event_mutex);
-    }
-
     void sync() { XSync(m_xstate.display, 0); }
 
   private:
-    std::mutex m_event_mutex;
-
     // State
     XState m_xstate;
     TmuxXWindowMapping m_tmux_mapping;
 
-    std::queue<Msg> m_msg_q;
-
     std::queue<Window> m_window_q;
     std::unordered_set<Window> m_pending_windows;
 
-    std::atomic<bool> m_stop = false;
+    bool m_stop = false;
     static bool m_existing_wm;
 
     // When sending tmux commands to pane from gui focus
@@ -343,10 +315,6 @@ class WMInstance {
                     m_xstate.focus_term();
                 } else if (!m_pending_windows.count(w) && !iconic(w)) {
 
-                    std::string msg = "map request: ";
-                    msg.append(std::to_string(w));
-                    notify(msg);
-
                     m_window_q.push(w);
                     m_pending_windows.insert(w);
                     split_window();
@@ -370,7 +338,6 @@ class WMInstance {
                     if (wp.unmap_pending()) {
                         wp.notify_unmapped();
                     } else {
-                        notify("unmapped");
                         m_tmux_mapping.remove_window(ev.xunmap.window);
                         m_xstate.focus_term();
                     }
@@ -402,46 +369,40 @@ class WMInstance {
 
         case ClientMessage:
             // Handle ipc message
-            m_event_mutex.lock();
-            if (!m_msg_q.empty()) {
-                Msg msg = m_msg_q.front();
-                m_msg_q.pop();
-                m_event_mutex.unlock();
-
-                switch (msg.type) {
-                case MsgType::RESOLUTION:
-                    set_term_layout(msg.msg.term_init_layout.term_resolution,
-                                    msg.msg.term_init_layout.bar_position);
-                    m_xstate.set_prefix(msg.msg.term_init_layout.prefix);
-                    break;
-                case MsgType::EXIT:
+            {
+                Msg msg{ev};
+                if (ev.xclient.message_type ==
+                    msg_type_atom(m_xstate.display, MsgType::RESOLUTION)) {
+                    set_term_layout(
+                        msg.resolution(),
+                        static_cast<TmuxBarPosition>(msg.bar_pos()));
+                    m_xstate.set_prefix(msg.mod_kc());
+                } else if (ev.xclient.message_type ==
+                           msg_type_atom(m_xstate.display, MsgType::EXIT)) {
                     stop();
-                    pthread_exit(EXIT_SUCCESS);
-                    break;
-                case MsgType::KILL_PANE:
+                } else if (ev.xclient.message_type ==
+                           msg_type_atom(m_xstate.display,
+                                         MsgType::KILL_PANE)) {
                     kill_pane_client();
-                case MsgType::TMUX_POSITION:
-                    m_tmux_mapping.move_pane(msg.msg.pane_position.location);
-                    if (msg.msg.pane_position.focused) {
-                        if (msg.msg.pane_position.zoomed)
-                            notify("Zoome 2");
-                        focus_tmux(msg.msg.pane_position.location,
-                                   msg.msg.pane_position.zoomed);
+                } else if (ev.xclient.message_type ==
+                           msg_type_atom(m_xstate.display,
+                                         MsgType::TMUX_POSITION)) {
+
+                    m_tmux_mapping.move_pane(msg.tm_location());
+                    if (msg.focused()) {
+                        focus_tmux(msg.tm_location(), msg.zoomed());
                     }
-                    set_position(msg.msg.pane_position.location,
-                                 msg.msg.pane_position.position);
+                    set_position(msg.tm_location(), msg.window_position());
                 }
-            } else {
 
                 // Check for transtion to iconic
-                if (static_cast<Atom>(ev.xclient.type) ==
-                    XInternAtom(m_xstate.display, "WM_CHANGE_STATE", false)) {
-                    notify("Change state!!");
-                };
-
-                m_event_mutex.unlock();
+                // if (static_cast<Atom>(ev.xclient.type) ==
+                //     XInternAtom(m_xstate.display, "WM_CHANGE_STATE", false))
+                //     { notify("Change state!!");
+                // };
             }
             break;
+
         case PropertyNotify:
             if (m_tmux_mapping.has_window(ev.xproperty.window) &&
                 ev.xproperty.atom ==

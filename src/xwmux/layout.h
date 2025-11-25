@@ -10,6 +10,15 @@ extern "C" {
 struct Point {
     std::size_t x;
     std::size_t y;
+
+    constexpr uint32_t pack() const {
+        return (x & 0xFFFF) | ((y & 0xFFFF) << 16);
+    }
+
+    static constexpr Point unpack(const uint32_t packed_point) {
+        return {.x = (packed_point & 0xFFFF),
+                .y = (packed_point >> 16 & 0xFFFF)};
+    }
 };
 
 struct WindowPosition {
@@ -25,7 +34,8 @@ struct WindowPosition {
 
 struct Resolution {
     Resolution() : width(1), height(1) {}
-    Resolution(const size_t width, const size_t height) : width(width), height(height) {}
+    Resolution(const size_t width, const size_t height)
+        : width(width), height(height) {}
 
     Resolution(Display *const display)
         : width(XDisplayWidth(display, 0)), height(XDisplayHeight(display, 0)) {
@@ -106,7 +116,6 @@ struct WindowLayouts {
         return {.start = term_to_screen_pos(position.start),
                 .end = term_to_screen_pos(position.end)};
     }
-
 
   private:
     enum class PaddingDistribution : uint8_t {

@@ -19,7 +19,7 @@ void spawn_window();
 
 void split_window();
 
-void send_message(std::string_view msg);
+void send_message(const std::string_view msg);
 
 void kill_pane(const TmuxPaneID tm_pane);
 

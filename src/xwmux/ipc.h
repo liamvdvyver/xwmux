@@ -4,6 +4,7 @@
 #include "tmux.h"
 #include "xwrapper.h"
 
+#include <X11/Xlib.h>
 #include <cassert>
 #include <utility>
 
@@ -29,7 +30,7 @@ constexpr Atom msg_type_atom(Display *dpy, const MsgType type) {
 
 struct Msg {
 
-    constexpr Msg(const XEvent ev) : m_ev(ev) { assert(ev.type = ClientMessage); }
+    constexpr Msg(const XClientMessageEvent &ev) : m_ev({.xclient = ev}) { assert(ev.type = ClientMessage); }
 
     // Static factory methods
 

@@ -4,7 +4,10 @@
 #include "tmux.h"
 #include "xwrapper.h"
 
+extern "C" {
 #include <X11/Xlib.h>
+}
+
 #include <cassert>
 #include <utility>
 
@@ -30,7 +33,9 @@ constexpr Atom msg_type_atom(Display *dpy, const MsgType type) {
 
 struct Msg {
 
-    constexpr Msg(const XClientMessageEvent &ev) : m_ev({.xclient = ev}) { assert(ev.type = ClientMessage); }
+    constexpr Msg(const XClientMessageEvent &ev) : m_ev({.xclient = ev}) {
+        assert(ev.type = ClientMessage);
+    }
 
     // Static factory methods
 
@@ -39,10 +44,8 @@ struct Msg {
                                            const Resolution res_px,
                                            TmuxBarPosition const bar_position) {
         Msg ret(dpy, MsgType::RESOLUTION);
-        ret.cols() = res_chars.width;
-        ret.rows() = res_chars.height;
-        ret.px_w() = res_px.width;
-        ret.px_h() = res_px.height;
+        ret.res_disp_packed() = res_px.pack();
+        ret.res_chars_packed() = res_chars.pack();
         ret.bar_pos() = static_cast<long>(bar_position);
         return ret;
     }
@@ -95,14 +98,10 @@ struct Msg {
     const long &zoom_focus() const { return m_ev.xclient.data.l[4]; }
 
     // Resolution
-    long &cols() { return m_ev.xclient.data.l[0]; }
-    const long &cols() const { return m_ev.xclient.data.l[0]; }
-    long &rows() { return m_ev.xclient.data.l[1]; }
-    const long &rows() const { return m_ev.xclient.data.l[1]; }
-    long &px_w() { return m_ev.xclient.data.l[2]; }
-    const long &px_w() const { return m_ev.xclient.data.l[2]; }
-    long &px_h() { return m_ev.xclient.data.l[3]; }
-    const long &px_h() const { return m_ev.xclient.data.l[3]; }
+    long &res_disp_packed() { return m_ev.xclient.data.l[0]; }
+    const long &res_disp_packed() const { return m_ev.xclient.data.l[0]; }
+    long &res_chars_packed() { return m_ev.xclient.data.l[1]; }
+    const long &res_chars_packed() const { return m_ev.xclient.data.l[1]; }
 
     long &bar_pos() { return m_ev.xclient.data.l[4]; }
     const long &bar_pos() const { return m_ev.xclient.data.l[4]; }
@@ -125,11 +124,16 @@ struct Msg {
 
     TmuxLocation tm_location() const { return {tm_window(), tm_pane()}; }
 
-    Resolution res_chars() const { return Resolution(cols(), rows()); }
+    Resolution res_chars() const {
+        return Resolution(Point::unpack(res_chars_packed()));
+    }
+    Resolution res_px() const {
+        return Resolution(Point::unpack(res_disp_packed()));
+    }
 
-    Resolution res_px() const { return Resolution(px_w(), px_h()); }
-
-    ModifiedKeyCode mod_kc() const { return ModifiedKeyCode(keycode(), mods()); }
+    ModifiedKeyCode mod_kc() const {
+        return ModifiedKeyCode(keycode(), mods());
+    }
 
     XEvent &get_event() { return m_ev; }
     const XEvent &get_event() const { return m_ev; }

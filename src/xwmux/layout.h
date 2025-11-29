@@ -11,11 +11,13 @@ struct Point {
     std::size_t x;
     std::size_t y;
 
-    constexpr uint32_t pack() const {
+    using PackedPoint = uint32_t;
+
+    constexpr PackedPoint pack() const {
         return (x & 0xFFFF) | ((y & 0xFFFF) << 16);
     }
 
-    static constexpr Point unpack(const uint32_t packed_point) {
+    static constexpr Point unpack(const PackedPoint packed_point) {
         return {.x = (packed_point & 0xFFFF),
                 .y = (packed_point >> 16 & 0xFFFF)};
     }
@@ -32,21 +34,21 @@ struct WindowPosition {
     }
 };
 
-struct Resolution {
-    Resolution() : width(1), height(1) {}
-    Resolution(const size_t width, const size_t height)
-        : width(width), height(height) {}
+struct Resolution : public Point {
+
+    Resolution() : Point{.x = 1, .y = 1} {}
+
+    Resolution(Point p) : Point(p) {}
+
+    Resolution(std::size_t x, std::size_t y) : Point{.x = x, .y = y} {}
 
     Resolution(Display *const display)
-        : width(XDisplayWidth(display, 0)), height(XDisplayHeight(display, 0)) {
-    }
+        : Point{.x = static_cast<size_t>((XDisplayWidth(display, 0))),
+                .y = static_cast<size_t>((XDisplayHeight(display, 0)))} {}
 
     WindowPosition fullscreen() const {
-        return {.start = {0, 0}, .end = {width, height}};
+        return {.start = {0, 0}, .end = {x, y}};
     }
-
-    std::size_t width;
-    std::size_t height;
 };
 
 enum class TmuxBarPosition : bool {
@@ -98,11 +100,11 @@ struct WindowLayouts {
         switch (m_bar_position) {
         case TmuxBarPosition::BOTTOM:
             start_px = {0, 0};
-            end_px = {m_term_resolution.width, m_term_resolution.height - 1};
+            end_px = {m_term_resolution.x, m_term_resolution.y - 1};
             break;
         case TmuxBarPosition::TOP:
             start_px = {0, 1};
-            end_px = {m_term_resolution.width, m_term_resolution.height};
+            end_px = {m_term_resolution.x, m_term_resolution.y};
             break;
         }
 
@@ -146,25 +148,24 @@ struct WindowLayouts {
     constexpr Resolution
     char_resolution(const Resolution screen_resolution,
                     const Resolution term_resolution) const {
-        return Resolution(screen_resolution.width / term_resolution.width,
-                          screen_resolution.height / term_resolution.height);
+        return Resolution(screen_resolution.x / term_resolution.x,
+                          screen_resolution.y / term_resolution.y);
     }
 
     // Assumes padding is minimal
     constexpr Resolution
     minimal_padding(const Resolution screen_resolution,
                     const Resolution term_resolution) const {
-        return Resolution(screen_resolution.width % term_resolution.width,
-                          screen_resolution.height % term_resolution.height);
+        return Resolution(screen_resolution.x % term_resolution.x,
+                          screen_resolution.y % term_resolution.y);
     }
 
     // If character grid resolution is known
     constexpr Resolution
     explicit_padding(const Resolution screen_resolution,
                      const Resolution char_grid_resolution) const {
-        return Resolution(screen_resolution.width - char_grid_resolution.width,
-                          screen_resolution.height -
-                              char_grid_resolution.height);
+        return Resolution(screen_resolution.x - char_grid_resolution.x,
+                          screen_resolution.y - char_grid_resolution.y);
     }
 
     constexpr size_t
@@ -185,8 +186,8 @@ struct WindowLayouts {
     init_padding(const Resolution total_padding,
                  const PaddingDistribution x_padding_distribution,
                  const PaddingDistribution y_padding_distribution) const {
-        return {init_padding(total_padding.width, x_padding_distribution),
-                init_padding(total_padding.height, y_padding_distribution)};
+        return {init_padding(total_padding.x, x_padding_distribution),
+                init_padding(total_padding.y, y_padding_distribution)};
     }
 
     // Assumes minimal padding, with screen/terminal resolutions set correctly
@@ -212,14 +213,12 @@ struct WindowLayouts {
     // Top left pixel of terminal character
     // Ignores bar
     constexpr Point term_to_screen_pos(const Point pixel_idx) const {
-        return {.x = term_to_screen_pos(pixel_idx.x, m_screen_resolution.width,
-                                        m_term_resolution.width,
-                                        m_term_char_resolution.width,
-                                        m_init_padding.width),
-                .y = term_to_screen_pos(pixel_idx.y, m_screen_resolution.height,
-                                        m_term_resolution.height,
-                                        m_term_char_resolution.height,
-                                        m_init_padding.height)};
+        return {.x = term_to_screen_pos(
+                    pixel_idx.x, m_screen_resolution.x, m_term_resolution.x,
+                    m_term_char_resolution.x, m_init_padding.x),
+                .y = term_to_screen_pos(
+                    pixel_idx.y, m_screen_resolution.y, m_term_resolution.y,
+                    m_term_char_resolution.y, m_init_padding.y)};
     }
 
     // Helper: one axis

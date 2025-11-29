@@ -303,10 +303,8 @@ struct TmuxXWindowMapping {
                     : state.term.value_or(state.root);
 
             if (has_x_window) {
-                std::system("notify-send grab");
                 state.grab_prefix();
             } else {
-                std::system("notify-send ungrab");
                 state.ungrab_prefix();
             }
 

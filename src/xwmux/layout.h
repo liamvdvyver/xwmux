@@ -54,18 +54,42 @@ enum class TmuxBarPosition : bool {
     TOP,
 };
 
-// Now now, assume padding like kitty
-// i.e. even over x axis, all on bottom on y axis
+enum class PaddingDistribution : uint8_t {
+    START,
+    EVEN,
+    END,
+};
+
 struct WindowLayouts {
 
-    WindowLayouts(Display *const display, const Resolution terminal_resolution)
+    // Assumes padding is minimal given screen/terminal resolution
+    WindowLayouts(Display *const display, const Resolution terminal_resolution,
+                  const PaddingDistribution xy_padding_distribution =
+                      PaddingDistribution::END)
         : m_screen_resolution(display), m_term_resolution(terminal_resolution),
           m_bar_position(TmuxBarPosition::BOTTOM),
-          m_x_padding_distribution(PaddingDistribution::EVEN),
-          m_y_padding_distribution(PaddingDistribution::EVEN),
+          m_x_padding_distribution(xy_padding_distribution),
+          m_y_padding_distribution(xy_padding_distribution),
           m_term_char_resolution(
               char_resolution(m_screen_resolution, terminal_resolution)),
-          m_total_padding(padding(m_screen_resolution, terminal_resolution)),
+          m_total_padding(
+              minimal_padding(m_screen_resolution, terminal_resolution)),
+          m_init_padding(init_padding(m_total_padding, m_x_padding_distribution,
+                                      m_y_padding_distribution)) {}
+
+    // Given pixel resolution of character grid
+    WindowLayouts(Display *const display, const Resolution terminal_resolution,
+                  const Resolution char_grid_resolution,
+                  const PaddingDistribution xy_padding_distribution =
+                      PaddingDistribution::END)
+        : m_screen_resolution(display), m_term_resolution(terminal_resolution),
+          m_bar_position(TmuxBarPosition::BOTTOM),
+          m_x_padding_distribution(xy_padding_distribution),
+          m_y_padding_distribution(xy_padding_distribution),
+          m_term_char_resolution(
+              char_resolution(char_grid_resolution, terminal_resolution)),
+          m_total_padding(
+              explicit_padding(m_screen_resolution, char_grid_resolution)),
           m_init_padding(init_padding(m_total_padding, m_x_padding_distribution,
                                       m_y_padding_distribution)) {}
 
@@ -88,9 +112,10 @@ struct WindowLayouts {
         };
     }
 
-    void set_term_resolution(const Resolution resolution) {
-        m_term_resolution = resolution;
-        update_char_resolution();
+    void set_term_resolution(const Resolution term_resolution,
+                             const Resolution char_grid_resolution) {
+        m_term_resolution = term_resolution;
+        update_char_resolution(char_grid_resolution);
     }
 
     void set_screen_resolution(const Resolution resoltuion) {
@@ -118,12 +143,6 @@ struct WindowLayouts {
     }
 
   private:
-    enum class PaddingDistribution : uint8_t {
-        START,
-        EVEN,
-        END,
-    };
-
     constexpr Resolution
     char_resolution(const Resolution screen_resolution,
                     const Resolution term_resolution) const {
@@ -131,10 +150,21 @@ struct WindowLayouts {
                           screen_resolution.height / term_resolution.height);
     }
 
-    constexpr Resolution padding(const Resolution screen_resolution,
-                                 const Resolution term_resolution) const {
+    // Assumes padding is minimal
+    constexpr Resolution
+    minimal_padding(const Resolution screen_resolution,
+                    const Resolution term_resolution) const {
         return Resolution(screen_resolution.width % term_resolution.width,
                           screen_resolution.height % term_resolution.height);
+    }
+
+    // If character grid resolution is known
+    constexpr Resolution
+    explicit_padding(const Resolution screen_resolution,
+                     const Resolution char_grid_resolution) const {
+        return Resolution(screen_resolution.width - char_grid_resolution.width,
+                          screen_resolution.height -
+                              char_grid_resolution.height);
     }
 
     constexpr size_t
@@ -159,10 +189,22 @@ struct WindowLayouts {
                 init_padding(total_padding.height, y_padding_distribution)};
     }
 
+    // Assumes minimal padding, with screen/terminal resolutions set correctly
     void update_char_resolution() {
         m_term_char_resolution =
             char_resolution(m_screen_resolution, m_term_resolution);
-        m_total_padding = padding(m_screen_resolution, m_term_resolution);
+        m_total_padding =
+            minimal_padding(m_screen_resolution, m_term_resolution);
+        m_init_padding = init_padding(m_total_padding, m_x_padding_distribution,
+                                      m_y_padding_distribution);
+    }
+
+    // With screen/terminal resolution set correctly
+    void update_char_resolution(Resolution char_grid_resolution) {
+        m_term_char_resolution =
+            char_resolution(char_grid_resolution, m_term_resolution);
+        m_total_padding =
+            explicit_padding(m_screen_resolution, char_grid_resolution);
         m_init_padding = init_padding(m_total_padding, m_x_padding_distribution,
                                       m_y_padding_distribution);
     }

@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <cstdlib>
 #include <string_view>
 #include <unordered_map>
 
@@ -26,6 +27,8 @@ void kill_pane(const TmuxPaneID tm_pane);
 void focus_location(const TmuxPaneID tm_pane);
 
 void name_pane(const TmuxPaneID tm_pane, const std::string_view name);
+
+void send_prefix();
 
 // Represents a tmux pane containing an X11 window
 struct WindowPane {
@@ -206,7 +209,7 @@ struct TmuxXWindowMapping {
         return m_workspaces[location.first][location.second];
     }
 
-    void set_active(const XState &state, const TmuxLocation location,
+    void set_active(XState &state, const TmuxLocation location,
                     const bool zoomed = false) {
         activate_window(state, location.first,
                         zoomed ? std::optional(location.second) : std::nullopt);
@@ -245,7 +248,7 @@ struct TmuxXWindowMapping {
     void override() { m_overriden = true; }
 
     // Unsets the override flag and re-focuses the active window
-    void release_override(const XState &state) {
+    void release_override(XState &state) {
         focus_pane(state, m_active, true);
     }
 
@@ -271,7 +274,8 @@ struct TmuxXWindowMapping {
     }
 
     // Clears override if switch takes place
-    void focus_pane(const XState &state, const TmuxLocation location,
+    // Grabs/ungrabs prefix as needed
+    void focus_pane(XState &state, const TmuxLocation location,
                     bool redundant_refocus = false) {
 
         if (m_active != location || redundant_refocus) {
@@ -285,6 +289,14 @@ struct TmuxXWindowMapping {
                 has_x_window
                     ? m_workspaces[location.first][location.second].get_window()
                     : state.term.value_or(state.root);
+
+            if (has_x_window) {
+                std::system("notify-send 'grabbing'");
+                state.grab_prefix();
+            } else {
+                std::system("notify-send 'ungrabbing'");
+                state.ungrab_prefix();
+            }
 
             XSetInputFocus(state.display, target, 0, 0);
             m_active.second = location.second;

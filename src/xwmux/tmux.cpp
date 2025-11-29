@@ -1,4 +1,5 @@
 #include "tmux.h"
+#include "instance.h"
 
 #include <format>
 #include <string>
@@ -30,3 +31,8 @@ void name_pane(const TmuxPaneID tm_pane, const std::string_view name) {
     std::system(
         std::format("tmux select-pane -t %{} -T '{}'", tm_pane, name).c_str());
 }
+
+void send_prefix() {
+    std::system("tmux send-keys -K $(tmux show-option prefix | cut -f 2 -d ' ')");
+    notify("sent prefix");
+};

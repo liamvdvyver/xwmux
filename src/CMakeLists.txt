@@ -23,7 +23,12 @@ file(GLOB SOURCES
     xwmux/*.h
 )
 
+file(GLOB SCRIPTS
+    scripts/*.sh
+)
+
 add_executable(xwmux ${SOURCES})
 add_executable(xwmux-ctl xwmux-utils/xwmux-ctl.cpp)
 
 install(TARGETS xwmux xwmux-ctl)
+install(PROGRAMS ${SCRIPTS} TYPE BIN)

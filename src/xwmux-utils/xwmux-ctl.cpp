@@ -34,25 +34,40 @@ struct Command {
 struct InitLayout : Command {
     std::string keyword() const override { return "init"; }
     std::string usage_suffix() const override {
-        return " <rows> <cols> <bar-position> <prefix>";
+        return " <rows> <cols> <px_w> <px_h> <bar-position>";
     }
     std::optional<Msg> parse(int argc, char **argv, int cur,
                              Display *dpy) override {
-        if (cur + 4 != argc - 1) {
+        if (cur + 5 != argc - 1) {
             return std::nullopt;
         }
-        std::size_t h = std::atoi(argv[cur + 1]);
-        std::size_t w = std::atoi(argv[cur + 2]);
+        std::size_t ch_h = std::atoi(argv[cur + 1]);
+        std::size_t ch_w = std::atoi(argv[cur + 2]);
+
+        std::size_t px_w = std::atoi(argv[cur + 3]);
+        std::size_t px_h = std::atoi(argv[cur + 4]);
 
         TmuxBarPosition pos = TmuxBarPosition::BOTTOM;
-        if (!std::strcmp("top", argv[cur + 3])) {
+        if (!std::strcmp("top", argv[cur + 5])) {
             pos = TmuxBarPosition::TOP;
-        } else if (std::strcmp("bottom", argv[cur + 3])) {
-            std::cerr << "Bad bar position\n";
+        } else if (std::strcmp("bottom", argv[cur + 5])) {
+            std::cerr << "bad bar position\n";
         }
 
-        ModifiedKeyCode prefix = tmux_to_keycode(dpy, argv[cur + 4]);
-        return Msg::report_resolution(dpy, {w, h}, pos, prefix);
+        return Msg::report_resolution(dpy, {ch_w, ch_h}, {px_w, px_h}, pos);
+    }
+};
+
+struct InitPrefix : Command {
+    std::string keyword() const override { return "prefix"; }
+    std::string usage_suffix() const override { return " <prefix>"; }
+    std::optional<Msg> parse(int argc, char **argv, int cur,
+                             Display *dpy) override {
+        if (cur + 1 != argc - 1) {
+            return std::nullopt;
+        }
+        ModifiedKeyCode prefix = tmux_to_keycode(dpy, argv[cur + 1]);
+        return Msg::report_prefix(dpy, prefix);
     }
 };
 
@@ -149,6 +164,8 @@ struct NotifyTmuxPosition : Command {
 std::unique_ptr<Command> parse_cmd(std::string cmd) {
     if (cmd == InitLayout().keyword()) {
         return std::make_unique<InitLayout>();
+    } else if (cmd == InitPrefix().keyword()) {
+        return std::make_unique<InitPrefix>();
     } else if (cmd == Exit().keyword()) {
         return std::make_unique<Exit>();
     } else if (cmd == KillPane().keyword()) {
@@ -184,7 +201,7 @@ int main(int argc, char **argv) {
     XEvent ev = opt_msg.value().get_event();
 
     if (!XSendEvent(dpy, XDefaultRootWindow(dpy), false,
-                   SubstructureRedirectMask, &ev)) {
+                    SubstructureRedirectMask, &ev)) {
         return EXIT_FAILURE;
     };
 

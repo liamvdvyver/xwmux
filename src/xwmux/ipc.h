@@ -9,12 +9,14 @@
 
 #define SOCK_PATH "/tmp/xwmux.sock"
 
-enum class MsgType { RESOLUTION, EXIT, TMUX_POSITION, KILL_PANE };
+enum class MsgType { RESOLUTION, PREFIX, EXIT, TMUX_POSITION, KILL_PANE };
 
 constexpr Atom msg_type_atom(Display *dpy, const MsgType type) {
     switch (type) {
     case MsgType::RESOLUTION:
         return XInternAtom(dpy, "_XW_RESOUTION", 0);
+    case MsgType::PREFIX:
+        return XInternAtom(dpy, "_XW_PREFIX", 0);
     case MsgType::EXIT:
         return XInternAtom(dpy, "_XW_EXIT", 0);
     case MsgType::TMUX_POSITION:
@@ -32,13 +34,21 @@ struct Msg {
     // Static factory methods
 
     constexpr static Msg report_resolution(Display *const dpy,
-                                           const Resolution res,
-                                           TmuxBarPosition const bar_position,
-                                           ModifiedKeyCode const prefix) {
+                                           const Resolution res_chars,
+                                           const Resolution res_px,
+                                           TmuxBarPosition const bar_position) {
         Msg ret(dpy, MsgType::RESOLUTION);
-        ret.res_h() = res.height;
-        ret.res_w() = res.width;
+        ret.cols() = res_chars.width;
+        ret.rows() = res_chars.height;
+        ret.px_w() = res_px.width;
+        ret.px_h() = res_px.height;
         ret.bar_pos() = static_cast<long>(bar_position);
+        return ret;
+    }
+
+    constexpr static Msg report_prefix(Display *const dpy,
+                                       ModifiedKeyCode const prefix) {
+        Msg ret(dpy, MsgType::PREFIX);
         ret.keycode() = prefix.keycode;
         ret.mods() = prefix.modifiers;
         return ret;
@@ -84,16 +94,23 @@ struct Msg {
     const long &zoom_focus() const { return m_ev.xclient.data.l[4]; }
 
     // Resolution
-    long &res_w() { return m_ev.xclient.data.l[0]; }
-    const long &res_w() const { return m_ev.xclient.data.l[0]; }
-    long &res_h() { return m_ev.xclient.data.l[1]; }
-    const long &res_h() const { return m_ev.xclient.data.l[1]; }
-    long &bar_pos() { return m_ev.xclient.data.l[2]; }
-    const long &bar_pos() const { return m_ev.xclient.data.l[2]; }
-    long &keycode() { return m_ev.xclient.data.l[3]; }
-    const long &keycode() const { return m_ev.xclient.data.l[3]; }
-    long &mods() { return m_ev.xclient.data.l[4]; }
-    const long &mods() const { return m_ev.xclient.data.l[4]; }
+    long &cols() { return m_ev.xclient.data.l[0]; }
+    const long &cols() const { return m_ev.xclient.data.l[0]; }
+    long &rows() { return m_ev.xclient.data.l[1]; }
+    const long &rows() const { return m_ev.xclient.data.l[1]; }
+    long &px_w() { return m_ev.xclient.data.l[2]; }
+    const long &px_w() const { return m_ev.xclient.data.l[2]; }
+    long &px_h() { return m_ev.xclient.data.l[3]; }
+    const long &px_h() const { return m_ev.xclient.data.l[3]; }
+
+    long &bar_pos() { return m_ev.xclient.data.l[4]; }
+    const long &bar_pos() const { return m_ev.xclient.data.l[4]; }
+
+    // Prefix
+    long &keycode() { return m_ev.xclient.data.l[0]; }
+    const long &keycode() const { return m_ev.xclient.data.l[0]; }
+    long &mods() { return m_ev.xclient.data.l[1]; }
+    const long &mods() const { return m_ev.xclient.data.l[1]; }
 
     // Other accessors
 
@@ -107,7 +124,9 @@ struct Msg {
 
     TmuxLocation tm_location() const { return {tm_window(), tm_pane()}; }
 
-    Resolution resolution() const { return Resolution(res_w(), res_h()); }
+    Resolution res_chars() const { return Resolution(cols(), rows()); }
+
+    Resolution res_px() const { return Resolution(px_w(), px_h()); }
 
     ModifiedKeyCode mod_kc() const { return ModifiedKeyCode(keycode(), mods()); }
 

@@ -1,11 +1,13 @@
 #pragma once
 
+#include <unistd.h>
 extern "C" {
 #include <X11/X.h>
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/cursorfont.h>
+#include <X11/extensions/XTest.h>
 }
 
 #include <cassert>
@@ -20,10 +22,7 @@ extern "C" {
 #include "tmux.h"
 
 constexpr void notify(std::string_view msg) {
-    std::string cmd = "notify-send '";
-    cmd.append(msg);
-    cmd.push_back('\'');
-    std::system(cmd.c_str());
+    std::system(std::format("notify-send '{}'", msg).c_str());
 }
 
 const std::string ROOT_CLASS = "xwmux_root";
@@ -86,8 +85,12 @@ class WMInstance {
 
     const XState &get_xstate() { return m_xstate; }
 
-    void set_term_layout(Resolution resoltuion, TmuxBarPosition bar_position) {
-        m_xstate.term_layout.set_term_resolution(resoltuion);
+    void set_term_layout(const Resolution term_resolution,
+                         const Resolution pixel_grid_resolution,
+                         TmuxBarPosition bar_position) {
+        m_xstate.term_layout.set_term_resolution(term_resolution,
+                                                 pixel_grid_resolution);
+
         m_xstate.term_layout.set_bar_position(bar_position);
     }
 
@@ -174,38 +177,63 @@ class WMInstance {
         }
     }
 
-    void forward_prefix(XEvent ev) {
-        // If already overridden, focus and forward to gui window
+    void forward_prefix(XEvent &ev) {
+
+        // Release the active grab, and generate focus in event
+        XUngrabKeyboard(m_xstate.display, CurrentTime);
+
+        // Ensure tmux will have the event delivered before sending prefix
+        sync();
+
+        // If terminal is focused (prefix active), overriding gui,
+        // redirect the event to the gui window
         if (m_tmux_mapping.overridden()) {
+
+            std::system("tmux send-keys -K escape");
 
             m_tmux_mapping.release_override(m_xstate);
 
             // Send to current window
+            ev.xkey.display = m_xstate.display;
+            ev.xkey.root = XDefaultRootWindow(m_xstate.display);
+            ev.xkey.same_screen = True;
+            ev.xkey.time = CurrentTime;
+            ev.xkey.subwindow = None;
             ev.xkey.window = m_tmux_mapping.current_window();
+            XSendEvent(m_xstate.display, ev.xkey.window, 0, 0, &ev);
+            return;
+        }
 
-            // If gui has focus
-        } else if (m_tmux_mapping.is_filled()) {
+        if (!m_xstate.term.has_value()) {
+            return;
+        }
 
-            if (!m_xstate.term.has_value()) {
-                return;
-            }
+        // Instead, release grab (without changing focus), and manually
+        // send the keys
+        // XAllowEvents(m_xstate.display, AsyncKeyboard, CurrentTime);
+        // sync();
 
+        // If gui has focus, move to terminal, send prefix and mark
+        // overridden
+        if (m_tmux_mapping.is_filled()) {
+
+            // Focus terminal, ignore incoming focus notifications
+            // to avoid re-focusing gui window
             m_ignore_focus = true;
             m_xstate.focus_term();
             m_ignore_focus = false;
-            ev.xkey.window = m_xstate.term.value();
+
             m_tmux_mapping.override();
 
-            // Send to term
-        } else if (m_xstate.term.has_value()) {
-            ev.xkey.window = m_xstate.term.value();
+            // Ensure tmux gets focus
+            sync();
         }
 
-        // Send the event
-        if (m_xstate.term.has_value()) {
-            XSendEvent(m_xstate.display, ev.xkey.window, False, NoEventMask,
-                       &ev);
-        }
+        // Sending raw events causes trouble with some terminal emulators
+        // This introduces ~5ms of delay, which is roughly what is needed to
+        // avoid those issues anyway.
+        // TODO: revisit this logic
+        send_prefix();
     }
 
     void sync() { XSync(m_xstate.display, 0); }
@@ -242,14 +270,7 @@ class WMInstance {
         return EXIT_SUCCESS;
     }
 
-    int open_term() {
-        // TODO: make configurable
-        std::string root_term_cmd = "kitty --detach";
-        root_term_cmd.append(" --class ");
-        root_term_cmd.append(ROOT_CLASS);
-        root_term_cmd.append(" --exec ~/git/xwmux/scripts/init_term.sh");
-        return std::system(root_term_cmd.c_str());
-    }
+    int open_term() { return std::system("xwmux-launch-term.sh"); }
 
     // Check if window is a root terminal.
     constexpr bool is_root_term(Window id) {
@@ -289,7 +310,7 @@ class WMInstance {
         m_xstate.term = id;
     }
 
-    void handle_event(const XEvent &ev) {
+    void handle_event(XEvent &ev) {
         switch (ev.type) {
         case CreateNotify:
             break;
@@ -359,10 +380,12 @@ class WMInstance {
                 m_xstate.focus_term();
             }
             break;
+        case KeyRelease:
+            notify("release");
+            break;
         case KeyPress:
             if (ev.xkey.keycode == m_xstate.prefix->keycode &&
                 ev.xkey.state == m_xstate.prefix->modifiers) {
-
                 forward_prefix(ev);
             }
             break;
@@ -374,8 +397,10 @@ class WMInstance {
                 if (ev.xclient.message_type ==
                     msg_type_atom(m_xstate.display, MsgType::RESOLUTION)) {
                     set_term_layout(
-                        msg.resolution(),
+                        msg.res_chars(), msg.res_px(),
                         static_cast<TmuxBarPosition>(msg.bar_pos()));
+                } else if (ev.xclient.message_type ==
+                           msg_type_atom(m_xstate.display, MsgType::PREFIX)) {
                     m_xstate.set_prefix(msg.mod_kc());
                 } else if (ev.xclient.message_type ==
                            msg_type_atom(m_xstate.display, MsgType::EXIT)) {

@@ -47,11 +47,10 @@ struct XState {
 
     void set_prefix(const ModifiedKeyCode new_prefix) {
         if (grabbed) {
-            XUngrabKey(display, new_prefix.keycode, new_prefix.modifiers, root);
-            XGrabKey(display, new_prefix.modifiers, new_prefix.modifiers, root,
+            XUngrabKey(display, prefix->keycode, prefix->modifiers, root);
+            XGrabKey(display, new_prefix.keycode, new_prefix.modifiers, root,
                      true, GrabModeAsync, GrabModeSync);
         }
-
         prefix = new_prefix;
     }
 
@@ -60,16 +59,16 @@ struct XState {
         if (!grabbed && prefix.has_value()) {
             XGrabKey(display, prefix->keycode, prefix->modifiers, root, true,
                      GrabModeAsync, GrabModeSync);
-            grabbed = true;
         }
+        grabbed = true;
     }
 
     void ungrab_prefix() {
         assert(prefix.has_value());
         if (grabbed && prefix.has_value()) {
             XUngrabKey(display, prefix->keycode, prefix->modifiers, root);
-            grabbed = false;
         }
+        grabbed = false;
     }
 
     constexpr bool is_root_term(Window id) {

@@ -13,7 +13,14 @@ extern "C" {
 
 #define SOCK_PATH "/tmp/xwmux.sock"
 
-enum class MsgType { RESOLUTION, PREFIX, EXIT, TMUX_POSITION, KILL_PANE };
+enum class MsgType {
+    RESOLUTION,
+    PREFIX,
+    EXIT,
+    TMUX_POSITION,
+    KILL_PANE,
+    KILL_ORPHANS
+};
 
 constexpr Atom msg_type_atom(Display *dpy, const MsgType type) {
     switch (type) {
@@ -27,6 +34,8 @@ constexpr Atom msg_type_atom(Display *dpy, const MsgType type) {
         return XInternAtom(dpy, "_XW_TMUX_POSITION", 0);
     case MsgType::KILL_PANE:
         return XInternAtom(dpy, "_XW_KILL_PANE", 0);
+    case MsgType::KILL_ORPHANS:
+        return XInternAtom(dpy, "_XW_KILL_ORPHANS", 0);
     }
     std::unreachable();
 };
@@ -61,14 +70,14 @@ struct Msg {
     constexpr static Msg report_position(Display *const dpy,
                                          const TmuxLocation location,
                                          const WindowPosition position,
-                                         const bool focused,
-                                         const bool zoomed) {
+                                         const bool focused, const bool zoomed,
+                                         const bool dead) {
         Msg ret(dpy, MsgType::TMUX_POSITION);
         ret.position_start() = position.start.pack();
         ret.position_end() = position.end.pack();
         ret.tm_window() = location.first;
         ret.tm_pane() = location.second;
-        ret.zoom_focus() = (focused | (zoomed << 1));
+        ret.bitflags() = (focused | (zoomed << 1) | (dead << 2));
         return ret;
     }
 
@@ -76,6 +85,11 @@ struct Msg {
                                    const TmuxPaneID tm_pane) {
         Msg ret(dpy, MsgType::KILL_PANE);
         ret.tm_pane() = tm_pane;
+        return ret;
+    }
+
+    constexpr static Msg kill_ophans(Display *const dpy) {
+        Msg ret(dpy, MsgType::KILL_ORPHANS);
         return ret;
     }
 
@@ -94,7 +108,7 @@ struct Msg {
     const long &tm_window() const { return m_ev.xclient.data.l[2]; }
     long &tm_pane() { return m_ev.xclient.data.l[3]; }
     const long &tm_pane() const { return m_ev.xclient.data.l[3]; }
-    long &zoom_focus() { return m_ev.xclient.data.l[4]; }
+    long &bitflags() { return m_ev.xclient.data.l[4]; }
     const long &zoom_focus() const { return m_ev.xclient.data.l[4]; }
 
     // Resolution
@@ -116,6 +130,7 @@ struct Msg {
 
     bool focused() const { return zoom_focus() & 0b1; }
     bool zoomed() const { return zoom_focus() & 0b10; }
+    bool dead() const { return zoom_focus() & 0b100; }
 
     WindowPosition window_position() const {
         return {.start = {Point::unpack(position_start())},

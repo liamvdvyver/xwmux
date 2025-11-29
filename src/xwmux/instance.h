@@ -283,6 +283,31 @@ class WMInstance {
         }
     }
 
+    template <> void handle_x_event<ClientMessage>(XClientMessageEvent &ev) {
+        const Msg msg{ev};
+        if (ev.message_type ==
+            msg_type_atom(m_xstate.display, MsgType::RESOLUTION)) {
+            handle_client_msg<MsgType::RESOLUTION>(msg);
+        } else if (ev.message_type ==
+                   msg_type_atom(m_xstate.display, MsgType::PREFIX)) {
+            handle_client_msg<MsgType::PREFIX>(msg);
+        } else if (ev.message_type ==
+                   msg_type_atom(m_xstate.display, MsgType::EXIT)) {
+            handle_client_msg<MsgType::EXIT>(msg);
+        } else if (ev.message_type ==
+                   msg_type_atom(m_xstate.display, MsgType::KILL_PANE)) {
+            handle_client_msg<MsgType::KILL_PANE>(msg);
+        } else if (ev.message_type ==
+                   msg_type_atom(m_xstate.display, MsgType::KILL_ORPHANS)) {
+            handle_client_msg<MsgType::KILL_ORPHANS>(msg);
+        } else if (ev.message_type ==
+                   msg_type_atom(m_xstate.display, MsgType::TMUX_POSITION)) {
+            handle_client_msg<MsgType::TMUX_POSITION>(msg);
+        }
+    }
+
+    //--- Client message handlers --------------------------------------------//
+
     template <MsgType msg_type> void handle_client_msg(const Msg &msg);
 
     template <> void handle_client_msg<MsgType::RESOLUTION>(const Msg &msg) {
@@ -304,27 +329,12 @@ class WMInstance {
         // Pane should be killed normally on unmap notify.
     }
 
-    template <> void handle_x_event<ClientMessage>(XClientMessageEvent &ev) {
-        const Msg msg{ev};
-        if (ev.message_type ==
-            msg_type_atom(m_xstate.display, MsgType::RESOLUTION)) {
-            handle_client_msg<MsgType::RESOLUTION>(msg);
-        } else if (ev.message_type ==
-                   msg_type_atom(m_xstate.display, MsgType::PREFIX)) {
-            handle_client_msg<MsgType::PREFIX>(msg);
-        } else if (ev.message_type ==
-                   msg_type_atom(m_xstate.display, MsgType::EXIT)) {
-            handle_client_msg<MsgType::EXIT>(msg);
-        } else if (ev.message_type ==
-                   msg_type_atom(m_xstate.display, MsgType::KILL_PANE)) {
-            handle_client_msg<MsgType::KILL_PANE>(msg);
-        } else if (ev.message_type ==
-                   msg_type_atom(m_xstate.display, MsgType::TMUX_POSITION)) {
-            handle_client_msg<MsgType::TMUX_POSITION>(msg);
+    template <> void handle_client_msg<MsgType::KILL_ORPHANS>(const Msg &msg) {
+        (void)msg;
+        for (Window w : m_tmux_mapping.find_orphans()) {
+            m_xstate.kill_client(w);
         }
     }
-
-    //--- Client message handlers --------------------------------------------//
 
     template <> void handle_client_msg<MsgType::EXIT>(const Msg &msg) {
         (void)msg;
@@ -333,11 +343,12 @@ class WMInstance {
 
     template <> void handle_client_msg<MsgType::TMUX_POSITION>(const Msg &msg) {
         m_tmux_mapping.move_pane(msg.tm_location());
+
         if (msg.focused() && !m_ignore_focus) {
 
             // Have window to add
             if (!m_window_q.empty() &&
-                !m_tmux_mapping.is_filled(msg.tm_location())) {
+                !m_tmux_mapping.is_filled(msg.tm_location()) && msg.dead()) {
 
                 Window window = m_window_q.front();
                 m_window_q.pop();

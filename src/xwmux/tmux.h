@@ -1,13 +1,14 @@
 /*
-* Internal represetntations of tmux state, and helpers for interacting with tmux
-* via cli.
-*/
+ * Internal represetntations of tmux state, and helpers for interacting with
+ * tmux via cli.
+ */
 
 #pragma once
 
 #include <cstdlib>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "xwrapper.h"
 
@@ -29,6 +30,8 @@ void focus_location(const TmuxPaneID tm_pane);
 void name_pane(const TmuxPaneID tm_pane, const std::string_view name);
 
 void send_prefix();
+
+bool find_pane(const TmuxPaneID tm_pane);
 
 // Represents a tmux pane containing an X11 window
 struct WindowPane {
@@ -248,11 +251,20 @@ struct TmuxXWindowMapping {
     void override() { m_overriden = true; }
 
     // Unsets the override flag and re-focuses the active window
-    void release_override(XState &state) {
-        focus_pane(state, m_active, true);
-    }
+    void release_override(XState &state) { focus_pane(state, m_active, true); }
 
     bool overridden() const { return m_overriden; }
+
+    // TODO: do this in linear time w/ two sorted lists
+    std::unordered_set<Window> find_orphans() {
+        std::unordered_set<Window> ret;
+        for (auto [w, tm_pane] : m_inverse_map) {
+            if (!find_pane(tm_pane)) {
+                ret.insert(w);
+            }
+        }
+        return ret;
+    }
 
   private:
     void activate_window(const XState &state, TmuxWindowID tm_window,
@@ -291,8 +303,10 @@ struct TmuxXWindowMapping {
                     : state.term.value_or(state.root);
 
             if (has_x_window) {
+                std::system("notify-send grab");
                 state.grab_prefix();
             } else {
+                std::system("notify-send ungrab");
                 state.ungrab_prefix();
             }
 

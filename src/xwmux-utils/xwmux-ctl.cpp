@@ -101,7 +101,7 @@ std::optional<TmuxLocation> get_loc(int argc, char **argv, int cur) {
 struct KillPane : Command {
     std::string keyword() const override { return "kill-pane"; }
     std::string usage_suffix() const override {
-        return " [ %<pane-id> | focused ]";
+        return " [ %<pane-id> | focused | orphans ]";
     }
     std::optional<Msg> parse(int argc, char **argv, int cur,
                              Display *dpy) override {
@@ -109,9 +109,13 @@ struct KillPane : Command {
             return std::nullopt;
         }
         TmuxPaneID tm_pane = -1;
-        if (std::strcmp(argv[1], "focused")) {
-            tm_pane = stoi(std::string(argv[1]));
+        if (!std::strcmp(argv[1], "focused")) {
+            return Msg::kill_pane(dpy, tm_pane);
+        } else if (!std::strcmp(argv[1], "orphans")) {
+            return Msg::kill_ophans(dpy);
         }
+
+        tm_pane = stoi(std::string(argv[1]));
         return Msg::kill_pane(dpy, tm_pane);
     }
 };
@@ -121,11 +125,11 @@ struct NotifyTmuxPosition : Command {
     std::string usage_suffix() const override {
         return " focused zoomed $<session-id> @<window-id> %<pane-id> "
                "pane_left "
-               "pane_top pane_width pane_height";
+               "pane_top pane_width pane_height dead";
     }
     std::optional<Msg> parse(int argc, char **argv, int cur,
                              Display *dpy) override {
-        if (cur + 9 != argc - 1) {
+        if (cur + 10 != argc - 1) {
             std::cout << "wrong args\n";
             return std::nullopt;
         }
@@ -147,12 +151,13 @@ struct NotifyTmuxPosition : Command {
             pane_top = std::stoi(argv[cur++]);
             pane_width = std::stoi(argv[cur++]);
             pane_height = std::stoi(argv[cur++]);
+            bool dead = std::stoi(argv[cur++]);
 
             return Msg::report_position(
                 dpy, loc.value(),
                 WindowPosition({pane_left, pane_top}, {pane_left + pane_width,
                                                        pane_top + pane_height}),
-                focused, zoomed);
+                focused, zoomed, dead);
 
         } catch (std::invalid_argument e) {
             std::cout << "couldn't get rest\n";

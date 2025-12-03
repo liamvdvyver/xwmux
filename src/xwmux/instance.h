@@ -227,8 +227,9 @@ class WMInstance {
     }
 
     template <> void handle_x_event<KeyPress>(XEvent &ev) {
-        if (ev.xkey.keycode == m_xstate.prefix->keycode &&
-            ev.xkey.state == m_xstate.prefix->modifiers) {
+        XKeyPressedEvent &k_ev = ev.xkey;
+        if (k_ev.keycode == m_xstate.prefix->keycode &&
+            k_ev.state == m_xstate.prefix->modifiers) {
             // Release the active grab, and generate focus in event
             XUngrabKeyboard(m_xstate.display, CurrentTime);
 
@@ -241,13 +242,13 @@ class WMInstance {
                 m_tmux_mapping.release_override(m_xstate);
 
                 // Send to current window
-                ev.xkey.display = m_xstate.display;
-                ev.xkey.root = XDefaultRootWindow(m_xstate.display);
-                ev.xkey.same_screen = True;
-                ev.xkey.time = CurrentTime;
-                ev.xkey.subwindow = None;
-                ev.xkey.window = m_tmux_mapping.current_window();
-                XSendEvent(m_xstate.display, ev.xkey.window, 0, 0, &ev);
+                k_ev.display = m_xstate.display;
+                k_ev.root = XDefaultRootWindow(m_xstate.display);
+                k_ev.same_screen = True;
+                k_ev.time = CurrentTime;
+                k_ev.subwindow = None;
+                k_ev.window = m_tmux_mapping.current_window();
+                XSendEvent(m_xstate.display, k_ev.window, 0, 0, &ev);
                 return;
             }
 

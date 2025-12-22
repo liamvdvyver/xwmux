@@ -1,13 +1,10 @@
 cmake_minimum_required(VERSION 3.10)
 project(xwmux)
 
-set(CMAKE_CXX_COMPILER clang++)
-
 message("Compiler Version: ${CMAKE_CXX_COMPILER} ${CMAKE_CXX_COMPILER_VERSION}")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 add_compile_options(-std=c++23 -O3 -flto=auto -march=native -fomit-frame-pointer -Wall -Wextra -Wpedantic -DNDEBUG)
-add_link_options(-fuse-ld=lld)
 
 # X11
 find_package(X11 REQUIRED)

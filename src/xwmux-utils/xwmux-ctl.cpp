@@ -92,8 +92,7 @@ std::optional<TmuxLocation> get_loc(int argc, char **argv, int cur) {
         window_id = std::stoi(argv[cur + 1] + 1);
         pane_id = std::stoi(argv[cur + 2] + 1);
         return std::make_pair(window_id, pane_id);
-    } catch (std::invalid_argument e) {
-
+    } catch (std::invalid_argument &e) {
         return std::nullopt;
     }
 }
@@ -159,7 +158,7 @@ struct NotifyTmuxPosition : Command {
                                                        pane_top + pane_height}),
                 focused, zoomed, dead);
 
-        } catch (std::invalid_argument e) {
+        } catch (std::invalid_argument &e) {
             std::cout << "couldn't get rest\n";
             return std::nullopt;
         }

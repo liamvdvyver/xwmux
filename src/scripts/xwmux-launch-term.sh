@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env sh
 
 ROOT_TERM_CLASS="xwmux_root"
 EXEC_PROGRAM="xwmux-init-term.sh"

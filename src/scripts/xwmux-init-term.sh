@@ -1,4 +1,4 @@
-#!/bin/env bash
+#!/usr/bin/env bash
 
 # Register the dimensions (rows/columns) of the current terminal for layout calculation.
 #

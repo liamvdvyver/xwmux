@@ -1,4 +1,4 @@
-#!/bin/env sh
+#!/usr/bin/env sh
 
 # Update focus
 msg=$(tmux display-message -p '#{q:session_id} #{window_id} #{pane_id}')

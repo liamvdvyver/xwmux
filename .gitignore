@@ -5,3 +5,6 @@ cmake_install.cmake
 compile_commands.json
 Makefile
 .cache/
+.direnv/
+install_manifest.txt
+result

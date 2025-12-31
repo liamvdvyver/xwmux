@@ -123,5 +123,5 @@ struct XState {
     std::optional<Window> term;
 
     std::optional<ModifiedKeyCode> prefix;
-    bool grabbed;
+    bool grabbed{};
 };

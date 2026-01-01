@@ -20,7 +20,10 @@ extern "C" {
 #include "tmux.h"
 
 constexpr void notify(std::string_view msg) {
-    std::system(std::format("notify-send '{}'", msg).c_str());
+    if (std::system(std::format("notify-send '{}'", msg).c_str())) {
+        // Fallback: send via tmux
+        send_message(msg);
+    };
 }
 
 class WMInstance {

@@ -74,7 +74,9 @@ template <> void WMInstance::handle_x_event<KeyPress>(XEvent &ev) {
         // redirect the event to the gui window
         if (m_tmux_mapping.overridden()) {
 
-            std::system("tmux send-keys -K escape");
+            if (std::system("tmux send-keys -K escape")) {
+                log_msg("Failed to send escape.\n");
+            };
 
             m_tmux_mapping.release_override(m_xstate);
 

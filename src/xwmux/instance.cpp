@@ -1,6 +1,11 @@
 #include "instance.h"
 
 #include "layout.h"
+#include "log.h"
+#include "tmux.h"
+
+#include <X11/X.h>
+#include <X11/Xlib.h>
 
 bool WMInstance::m_existing_wm = false;
 
@@ -23,7 +28,11 @@ template <> void WMInstance::handle_x_event<MapRequest>(XMapRequestEvent &ev) {
         XMapWindow(m_xstate.display, w);
         m_xstate.set_term(w);
         m_xstate.focus_term();
-    } else if (!m_pending_windows.count(w) && !m_xstate.iconic(w)) {
+    } else if (!m_pending_windows.count(w)) {
+
+        if (m_xstate.init_state(w).value_or(NormalState) != NormalState) {
+            log_msg("Window started in iconic state\n");
+        }
 
         m_window_q.push(w);
         m_pending_windows.insert(w);
@@ -141,7 +150,9 @@ template <>
 void WMInstance::handle_client_msg<MsgType::KILL_PANE>(const Msg &msg) {
     (void)msg;
     if (m_tmux_mapping.is_filled()) {
-        m_xstate.kill_client(m_tmux_mapping.current_window());
+        Window w = m_tmux_mapping.current_window();
+        m_tmux_mapping.kill_client(w, m_xstate.display);
+        m_tmux_mapping.remove_window(w);
     }
     // Pane should be killed normally on unmap notify.
 }
@@ -150,7 +161,8 @@ template <>
 void WMInstance::handle_client_msg<MsgType::KILL_ORPHANS>(const Msg &msg) {
     (void)msg;
     for (Window w : m_tmux_mapping.find_orphans()) {
-        m_xstate.kill_client(w);
+        m_tmux_mapping.kill_client(w, m_xstate.display);
+        m_tmux_mapping.remove_window(w);
     }
 }
 

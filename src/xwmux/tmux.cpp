@@ -4,8 +4,6 @@
 #include <format>
 #include <string>
 
-void spawn_window() { std::system("tmux new-window -n 'xwmux-app' ''"); }
-
 void split_window() {
     if (std::system("tmux split-window ''")) {
         log_msg("Failed to spawn window.\n");

@@ -5,4 +5,5 @@
 
 constexpr void log_msg(const std::string_view msg) {
     std::cerr << "[XWMUX]: " << msg;
+    std::system(std::format("notify-send '{}'", msg).c_str());
 }

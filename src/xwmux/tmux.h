@@ -17,8 +17,6 @@ using TmuxPaneID = int32_t;
 
 using TmuxLocation = std::pair<TmuxWindowID, TmuxPaneID>;
 
-void spawn_window();
-
 void split_window();
 
 void send_message(const std::string_view msg);
@@ -55,6 +53,23 @@ struct WindowPane {
         m_hidden = false;
     }
 
+    void kill_client(Display *display) {
+        if (m_dying)
+            return;
+        m_dying = true;
+
+        // Close window
+        // https://nachtimwald.com/2009/11/08/sending-wm_delete_window-client-messages/
+        XEvent ev;
+        ev.xclient.type = ClientMessage;
+        ev.xclient.window = m_window;
+        ev.xclient.message_type = XInternAtom(display, "WM_PROTOCOLS", true);
+        ev.xclient.format = 32;
+        ev.xclient.data.l[0] = XInternAtom(display, "WM_DELETE_WINDOW", false);
+        ev.xclient.data.l[1] = CurrentTime;
+        XSendEvent(display, m_window, False, NoEventMask, &ev);
+    }
+
     void hide(const XState &state) {
         XUnmapWindow(state.display, m_window);
         m_hidden = true;
@@ -68,6 +83,10 @@ struct WindowPane {
   private:
     Window m_window;
     bool m_hidden;
+
+    // If requested to die, but no destroy notification yet
+    // Avoid double sending requests
+    bool m_dying;
 
     // To differentiate unmap notifications originating from xwmux and the
     // application, keep track of the number of pending unmap requests.
@@ -245,6 +264,12 @@ struct TmuxXWindowMapping {
         TmuxPaneID p = m_inverse_map.at(window);
         TmuxWindowID w = m_inverse_tm_map.at(p);
         return m_workspaces.at(w)[p].is_hidden();
+    }
+
+    void kill_client(const Window window, Display *display) {
+        TmuxPaneID p = m_inverse_map.at(window);
+        TmuxWindowID w = m_inverse_tm_map.at(p);
+        return m_workspaces.at(w)[p].kill_client(display);
     }
 
     // Sets the override flag

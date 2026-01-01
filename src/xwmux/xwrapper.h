@@ -89,23 +89,11 @@ struct XState {
         }
     }
 
-    void kill_client(Window window) {
-        // Close window
-        // https://nachtimwald.com/2009/11/08/sending-wm_delete_window-client-messages/
-        XEvent ev;
-        ev.xclient.type = ClientMessage;
-        ev.xclient.window = window;
-        ev.xclient.message_type = XInternAtom(display, "WM_PROTOCOLS", true);
-        ev.xclient.format = 32;
-        ev.xclient.data.l[0] = XInternAtom(display, "WM_DELETE_WINDOW", false);
-        ev.xclient.data.l[1] = CurrentTime;
-        XSendEvent(display, window, False, NoEventMask, &ev);
-    }
-
-    constexpr bool iconic(Window id) {
-        XWindowAttributes attr;
-        XGetWindowAttributes(display, id, &attr);
-        return attr.map_state == IconicState;
+    constexpr std::optional<int> init_state(Window id) {
+        WrappedHints whints(display, id);
+        if (whints.get() && whints.get()->flags & StateHint)
+            return whints.get()->initial_state;
+        return std::nullopt;
     }
 
     constexpr bool override_redirect(Window id) {
@@ -124,4 +112,20 @@ struct XState {
 
     std::optional<ModifiedKeyCode> prefix;
     bool grabbed{};
+
+  private:
+    struct WrappedHints {
+      public:
+        WrappedHints(Display *display, Window id)
+            : hints(XGetWMHints(display, id)) {}
+        ~WrappedHints() {
+            XFree(hints);
+        }
+        WrappedHints(const WrappedHints &other) = delete;
+        WrappedHints &operator=(const WrappedHints &other) = delete;
+        const XWMHints *get() const { return hints; };
+
+      private:
+        XWMHints *const hints;
+    };
 };

@@ -5,7 +5,7 @@
 #include <string>
 
 void split_window() {
-    if (std::system("tmux split-window ''")) {
+    if (std::system("tmux split-window '' \\; break-pane")) {
         log_msg("Failed to spawn window.\n");
     };
 }
@@ -31,8 +31,15 @@ void focus_location(const TmuxPaneID tm_pane) {
 }
 
 void name_pane(const TmuxPaneID tm_pane, const std::string_view name) {
+    std::string name_clean;
+    for (char c : name) {
+        if (c == '\'') {
+            name_clean.append("'\\'");
+        }
+        name_clean.push_back(c);
+    }
     if (std::system(
-            std::format("tmux select-pane -t %{} -T '{}'", tm_pane, name)
+            std::format("tmux select-pane -t %{} -T '{}'", tm_pane, name_clean)
                 .c_str())) {
         log_msg("Failed to name pane.\n");
     };
@@ -40,7 +47,7 @@ void name_pane(const TmuxPaneID tm_pane, const std::string_view name) {
 
 void send_prefix() {
     if (std::system(
-        "tmux send-keys -K $(tmux show-option prefix | cut -f 2 -d ' ')")) {
+            "tmux send-keys -K $(tmux show-option prefix | cut -f 2 -d ' ')")) {
         log_msg("Failed to send prefix.\n");
     };
 };

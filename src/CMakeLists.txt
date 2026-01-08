@@ -4,7 +4,7 @@ project(xwmux)
 message("Compiler Version: ${CMAKE_CXX_COMPILER} ${CMAKE_CXX_COMPILER_VERSION}")
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_compile_options(-std=c++23 -O3 -flto=auto -march=native -fomit-frame-pointer -Wall -Wextra -Wpedantic -DNDEBUG)
+add_compile_options(-std=c++23 -O3 -Wall -Wextra -Wpedantic -DNDEBUG)
 
 # X11
 find_package(X11 REQUIRED)
@@ -29,3 +29,10 @@ add_executable(xwmux-ctl xwmux-utils/xwmux-ctl.cpp)
 
 install(TARGETS xwmux xwmux-ctl)
 install(PROGRAMS ${SCRIPTS} TYPE BIN)
+
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+if(CMAKE_EXPORT_COMPILE_COMMANDS)
+  set(CMAKE_CXX_STANDARD_INCLUDE_DIRECTORIES 
+      ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})
+endif()
+

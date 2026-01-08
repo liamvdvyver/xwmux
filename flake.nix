@@ -5,21 +5,35 @@
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
   };
 
-  outputs = { self, nixpkgs }:
-  let
-  systems =  [ "x86_64-linux" ];
-  forAllSystems = nixpkgs.lib.genAttrs systems;
+  outputs = {
+    self,
+    nixpkgs,
+  }: let
+    systems = ["x86_64-linux"];
+    forAllSystems = nixpkgs.lib.genAttrs systems;
   in {
-    packages = forAllSystems (system:
-      let
+    packages = forAllSystems (
+      system: let
         pkgs = nixpkgs.legacyPackages.${system};
+        stdenv = pkgs.stdenv;
       in {
-          default = pkgs.stdenv.mkDerivation {
-            name = "xwmux";
-            src = ./src;
-            buildInputs = [ pkgs.libx11 ];
-            nativeBuildInputs = [ pkgs.cmake ];
-          };
+        default = stdenv.mkDerivation {
+          name = "xwmux";
+          src = ./src;
+          buildInputs = [pkgs.libx11];
+          nativeBuildInputs = [pkgs.cmake];
+        };
+      }
+    );
+
+    devShells = forAllSystems (
+      system: let
+        pkgs = nixpkgs.legacyPackages.${system};
+        stdenv = pkgs.stdenv;
+      in {
+        default = pkgs.mkShell {
+          packages = [pkgs.libx11 pkgs.cmake pkgs.clang];
+        };
       }
     );
   };

@@ -36,7 +36,7 @@ template <> void WMInstance::handle_x_event<MapRequest>(XMapRequestEvent &ev) {
 
         m_window_q.push(w);
         m_pending_windows.insert(w);
-        split_window();
+        m_tmux.split_window();
 
         // Watch for name changes
         XSelectInput(m_xstate.display, w, PropertyChangeMask);
@@ -49,7 +49,7 @@ template <> void WMInstance::handle_x_event<UnmapNotify>(XUnmapEvent &ev) {
         if (wp.unmap_pending()) {
             wp.notify_unmapped();
         } else {
-            m_tmux_mapping.remove_window(ev.window);
+            m_tmux_mapping.remove_window(m_tmux, ev.window);
             m_xstate.focus_term();
         }
     } else {
@@ -67,7 +67,7 @@ void WMInstance::handle_x_event<DestroyNotify>(XDestroyWindowEvent &ev) {
         m_pending_windows.erase(ev.window);
         // Not focused yet, do not focus terminal
     } else {
-        m_tmux_mapping.remove_window(ev.window);
+        m_tmux_mapping.remove_window(m_tmux, ev.window);
         m_xstate.focus_term();
     }
 }
@@ -83,9 +83,7 @@ template <> void WMInstance::handle_x_event<KeyPress>(XEvent &ev) {
         // redirect the event to the gui window
         if (m_tmux_mapping.overridden()) {
 
-            if (std::system("tmux send-keys -K escape")) {
-                log_msg("Failed to send escape.\n");
-            };
+            m_tmux.send_escape();
 
             m_tmux_mapping.release_override(m_xstate);
 
@@ -120,7 +118,7 @@ template <> void WMInstance::handle_x_event<KeyPress>(XEvent &ev) {
         // Ensure tmux gets focus
         m_xstate.sync();
 
-        send_prefix();
+        m_tmux.send_prefix();
     }
 }
 
@@ -152,7 +150,7 @@ void WMInstance::handle_client_msg<MsgType::KILL_PANE>(const Msg &msg) {
     if (m_tmux_mapping.is_filled()) {
         Window w = m_tmux_mapping.current_window();
         m_tmux_mapping.kill_client(w, m_xstate.display);
-        m_tmux_mapping.remove_window(w);
+        m_tmux_mapping.remove_window(m_tmux, w);
     }
     // Pane should be killed normally on unmap notify.
 }
@@ -160,15 +158,21 @@ void WMInstance::handle_client_msg<MsgType::KILL_PANE>(const Msg &msg) {
 template <>
 void WMInstance::handle_client_msg<MsgType::KILL_ORPHANS>(const Msg &msg) {
     (void)msg;
-    for (Window w : m_tmux_mapping.find_orphans()) {
+    for (Window w : m_tmux_mapping.find_orphans(m_tmux)) {
         m_tmux_mapping.kill_client(w, m_xstate.display);
-        m_tmux_mapping.remove_window(w);
+        m_tmux_mapping.remove_window(m_tmux, w);
     }
 }
 
 template <> void WMInstance::handle_client_msg<MsgType::EXIT>(const Msg &msg) {
     (void)msg;
     stop();
+}
+
+template <>
+void WMInstance::handle_client_msg<MsgType::DUMP_STATE>(const Msg &msg) {
+    (void)msg;
+    write_state_json();
 }
 
 template <>
@@ -188,7 +192,7 @@ void WMInstance::handle_client_msg<MsgType::TMUX_POSITION>(const Msg &msg) {
             // TODO: avoid WMInstance::adding to queue twice instead?
             if (!m_pending_windows.count(window) ||
                 m_tmux_mapping.has_window(window)) {
-                kill_pane(msg.tm_location().second);
+                m_tmux.kill_pane(msg.tm_location().second);
 
             } else {
                 m_tmux_mapping.add_window(m_xstate, window, msg.tm_location());
@@ -233,6 +237,9 @@ void WMInstance::handle_x_event<ClientMessage>(XClientMessageEvent &ev) {
     } else if (ev.message_type ==
                msg_type_atom(m_xstate.display, MsgType::TMUX_POSITION)) {
         handle_client_msg<MsgType::TMUX_POSITION>(msg);
+    } else if (ev.message_type ==
+               msg_type_atom(m_xstate.display, MsgType::DUMP_STATE)) {
+        handle_client_msg<MsgType::DUMP_STATE>(msg);
     }
 }
 

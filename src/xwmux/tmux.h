@@ -5,7 +5,11 @@
 
 #pragma once
 
+#include <cstdint>
 #include <cstdlib>
+#include <format>
+#include <optional>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -17,19 +21,29 @@ using TmuxPaneID = int32_t;
 
 using TmuxLocation = std::pair<TmuxWindowID, TmuxPaneID>;
 
-void split_window();
+class TmuxClient {
+  public:
+    TmuxClient();
+    explicit TmuxClient(std::optional<std::string> socket);
 
-void send_message(const std::string_view msg);
+    void split_window() const;
+    void send_message(const std::string_view msg) const;
+    void kill_pane(const TmuxPaneID tm_pane) const;
+    void focus_location(const TmuxPaneID tm_pane) const;
+    void name_pane(const TmuxPaneID tm_pane, const std::string_view name) const;
+    void send_prefix() const;
+    void send_escape() const;
+    bool find_pane(const TmuxPaneID tm_pane) const;
 
-void kill_pane(const TmuxPaneID tm_pane);
+    const std::optional<std::string> &socket() const { return m_socket; }
 
-void focus_location(const TmuxPaneID tm_pane);
+  private:
+    std::optional<std::string> m_socket;
 
-void name_pane(const TmuxPaneID tm_pane, const std::string_view name);
-
-void send_prefix();
-
-bool find_pane(const TmuxPaneID tm_pane);
+    std::string base_command() const;
+    int run(const std::string &command) const;
+    static std::string shell_quote(const std::string_view str);
+};
 
 // Represents a tmux pane containing an X11 window
 struct WindowPane {
@@ -45,6 +59,13 @@ struct WindowPane {
     bool is_hidden() const { return m_hidden; }
 
     bool unmap_pending() const { return m_unmap_req_count; }
+
+    std::string to_json() const {
+        return std::format(
+            "{{\"window\":{},\"hidden\":{},\"unmap_pending\":{},\"dying\":{}}}",
+            static_cast<unsigned long>(m_window), m_hidden ? "true" : "false",
+            m_unmap_req_count, m_dying ? "true" : "false");
+    }
 
     void notify_unmapped() { m_unmap_req_count--; }
 
@@ -82,15 +103,15 @@ struct WindowPane {
 
   private:
     Window m_window;
-    bool m_hidden;
+    bool m_hidden = false;
 
     // If requested to die, but no destroy notification yet
     // Avoid double sending requests
-    bool m_dying;
+    bool m_dying = false;
 
     // To differentiate unmap notifications originating from xwmux and the
     // application, keep track of the number of pending unmap requests.
-    size_t m_unmap_req_count;
+    size_t m_unmap_req_count = 0;
 };
 
 // Represents a tmux window and all associated WindowPanes
@@ -173,7 +194,7 @@ struct TmuxXWindowMapping {
         m_inverse_tm_map[location.second] = location.first;
     }
 
-    void remove_window(const Window window) {
+    void remove_window(const TmuxClient &tmux, const Window window) {
         if (m_inverse_map.count(window)) {
 
             TmuxPaneID tm_pane = m_inverse_map[window];
@@ -187,7 +208,7 @@ struct TmuxXWindowMapping {
             m_inverse_map.erase(window);
             m_inverse_tm_map.erase(tm_pane);
 
-            kill_pane(tm_pane);
+            tmux.kill_pane(tm_pane);
         }
     }
 
@@ -280,11 +301,75 @@ struct TmuxXWindowMapping {
 
     bool overridden() const { return m_overriden; }
 
+    std::string to_json() const {
+        std::string json = "{";
+
+        json += "\"active\":";
+        if (m_active.first >= 0 && m_active.second >= 0) {
+            json += std::format("{{\"window\":{},\"pane\":{}}}", m_active.first,
+                                m_active.second);
+        } else {
+            json += "null";
+        }
+
+        json += std::format(",\"overridden\":{}",
+                            m_overriden ? "true" : "false");
+
+        json += ",\"workspaces\":{";
+        bool first_workspace = true;
+        for (const auto &[tm_window, workspace] : m_workspaces) {
+            if (!first_workspace) {
+                json += ",";
+            }
+            first_workspace = false;
+            json += std::format("\"{}\":{{\"panes\":{{", tm_window);
+
+            bool first_pane = true;
+            for (const auto &[tm_pane, window_pane] : workspace.get_windows()) {
+                if (!first_pane) {
+                    json += ",";
+                }
+                first_pane = false;
+                json += std::format("\"{}\":{}", tm_pane,
+                                    window_pane.to_json());
+            }
+
+            json += "}}";
+        }
+        json += "}";
+
+        json += ",\"inverse_tm_map\":{";
+        bool first_inverse_tm = true;
+        for (const auto &[tm_pane, tm_window] : m_inverse_tm_map) {
+            if (!first_inverse_tm) {
+                json += ",";
+            }
+            first_inverse_tm = false;
+            json += std::format("\"{}\":{}", tm_pane, tm_window);
+        }
+        json += "}";
+
+        json += ",\"inverse_map\":{";
+        bool first_inverse = true;
+        for (const auto &[window, tm_pane] : m_inverse_map) {
+            if (!first_inverse) {
+                json += ",";
+            }
+            first_inverse = false;
+            json += std::format("\"{}\":{}",
+                                static_cast<unsigned long>(window), tm_pane);
+        }
+        json += "}";
+
+        json += "}";
+        return json;
+    }
+
     // TODO: do this in linear time w/ two sorted lists
-    std::unordered_set<Window> find_orphans() {
+    std::unordered_set<Window> find_orphans(const TmuxClient &tmux) {
         std::unordered_set<Window> ret;
         for (auto [w, tm_pane] : m_inverse_map) {
-            if (!find_pane(tm_pane)) {
+            if (!tmux.find_pane(tm_pane)) {
                 ret.insert(w);
             }
         }
@@ -349,5 +434,5 @@ struct TmuxXWindowMapping {
     TmuxLocation m_active{-1, -1};
 
     // Active location has a gui window which is overridden
-    bool m_overriden;
+    bool m_overriden = false;
 };

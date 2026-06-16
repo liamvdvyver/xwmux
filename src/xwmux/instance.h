@@ -12,6 +12,7 @@ extern "C" {
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
+#include <format>
 #include <iostream>
 #include <queue>
 #include <unordered_set>
@@ -19,17 +20,10 @@ extern "C" {
 #include "ipc.h"
 #include "tmux.h"
 
-constexpr void notify(std::string_view msg) {
-    if (std::system(std::format("notify-send '{}'", msg).c_str())) {
-        // Fallback: send via tmux
-        send_message(msg);
-    };
-}
-
 class WMInstance {
 
   public:
-    WMInstance() : m_xstate() {
+    WMInstance() : m_xstate(), m_tmux() {
         init();
         run();
     };
@@ -84,7 +78,7 @@ class WMInstance {
         XCloseDisplay(m_xstate.display);
         for (auto [tm_window, workspace] : m_tmux_mapping.get_workspaces()) {
             for (auto [tm_pane, w] : workspace.get_windows()) {
-                kill_pane(tm_pane);
+                m_tmux.kill_pane(tm_pane);
             }
         }
         exit(EXIT_SUCCESS);
@@ -94,6 +88,7 @@ class WMInstance {
     //--- State --------------------------------------------------------------//
 
     XState m_xstate;
+    TmuxClient m_tmux;
     TmuxXWindowMapping m_tmux_mapping;
 
     std::queue<Window> m_window_q;
@@ -107,13 +102,29 @@ class WMInstance {
 
     //--- Helpers ------------------------------------------------------------//
 
+    void notify(std::string_view msg) const {
+        if (std::system(std::format("notify-send '{}'", msg).c_str())) {
+            // Fallback: send via tmux
+            m_tmux.send_message(msg);
+        }
+    }
+
     void name_client(Window window, TmuxPaneID pane) {
         XTextProperty name;
         XGetWMName(m_xstate.display, window, &name);
         std::string_view name_v(reinterpret_cast<char *>(name.value),
                                 name.nitems);
-        name_pane(pane, name_v);
+        m_tmux.name_pane(pane, name_v);
         XFree(name.value);
+    }
+
+    void write_state_json() {
+        const std::string json = m_tmux_mapping.to_json();
+        XChangeProperty(m_xstate.display, m_xstate.root,
+                        state_json_atom(m_xstate.display), XA_STRING, 8,
+                        PropModeReplace,
+                        reinterpret_cast<const unsigned char *>(json.c_str()),
+                        json.size());
     }
 
     //--- Error handlers -----------------------------------------------------//
@@ -132,7 +143,8 @@ class WMInstance {
         char *err_msg = (char *)malloc(err_msg_len + 1);
         XGetErrorText(display, err->error_code, err_msg, err_msg_len);
 
-        send_message(err_msg);
+        std::cerr << err_msg << std::endl;
+        free(err_msg);
         return EXIT_SUCCESS;
     }
 

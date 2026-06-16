@@ -1,8 +1,11 @@
+#include <chrono>
 #include <cstring>
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <string>
+#include <thread>
 
 #include "ipc.h"
 #include "tmux.h"
@@ -80,6 +83,18 @@ struct Exit : Command {
         (void)argv;
         (void)cur;
         return Msg::exit(dpy);
+    }
+};
+
+struct DumpState : Command {
+    std::string keyword() const override { return "dump-state"; }
+    std::string usage_suffix() const override { return ""; }
+    std::optional<Msg> parse(int argc, char **argv, int cur,
+                             Display *dpy) override {
+        (void)argc;
+        (void)argv;
+        (void)cur;
+        return Msg::dump_state(dpy);
     }
 };
 
@@ -165,6 +180,29 @@ struct NotifyTmuxPosition : Command {
     }
 };
 
+std::optional<std::string> read_state_json(Display *dpy) {
+    Atom actual_type;
+    int actual_format;
+    unsigned long item_count;
+    unsigned long bytes_after;
+    unsigned char *prop = nullptr;
+
+    if (XGetWindowProperty(dpy, XDefaultRootWindow(dpy), state_json_atom(dpy),
+                           0, 1 << 20, False, AnyPropertyType, &actual_type,
+                           &actual_format, &item_count, &bytes_after,
+                           &prop) != Success) {
+        return std::nullopt;
+    }
+
+    if (!prop) {
+        return std::nullopt;
+    }
+
+    std::string json(reinterpret_cast<char *>(prop), item_count);
+    XFree(prop);
+    return json;
+}
+
 std::unique_ptr<Command> parse_cmd(std::string cmd) {
     if (cmd == InitLayout().keyword()) {
         return std::make_unique<InitLayout>();
@@ -172,6 +210,8 @@ std::unique_ptr<Command> parse_cmd(std::string cmd) {
         return std::make_unique<InitPrefix>();
     } else if (cmd == Exit().keyword()) {
         return std::make_unique<Exit>();
+    } else if (cmd == DumpState().keyword()) {
+        return std::make_unique<DumpState>();
     } else if (cmd == KillPane().keyword()) {
         return std::make_unique<KillPane>();
     } else if (cmd == NotifyTmuxPosition().keyword()) {
@@ -190,6 +230,7 @@ int main(int argc, char **argv) {
     }
 
     std::string cmd_str = argv[1];
+    const bool wants_state_dump = cmd_str == "dump-state";
 
     std::unique_ptr<Command> cmd = parse_cmd(cmd_str);
     if (!cmd) {
@@ -202,12 +243,34 @@ int main(int argc, char **argv) {
     if (!opt_msg.has_value()) {
         return EXIT_FAILURE;
     }
+
+    if (wants_state_dump) {
+        XDeleteProperty(dpy, XDefaultRootWindow(dpy), state_json_atom(dpy));
+    }
+
     XEvent ev = opt_msg.value().get_event();
 
     if (!XSendEvent(dpy, XDefaultRootWindow(dpy), false,
                     SubstructureRedirectMask, &ev)) {
         return EXIT_FAILURE;
-    };
+    }
+
+    XSync(dpy, false);
+
+    if (wants_state_dump) {
+        for (int i = 0; i < 50; i++) {
+            std::optional<std::string> json = read_state_json(dpy);
+            if (json.has_value()) {
+                std::cout << json.value() << std::endl;
+                XCloseDisplay(dpy);
+                return EXIT_SUCCESS;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        std::cerr << "Timed out waiting for xwmux state dump" << std::endl;
+        XCloseDisplay(dpy);
+        return EXIT_FAILURE;
+    }
 
     XCloseDisplay(dpy);
 }

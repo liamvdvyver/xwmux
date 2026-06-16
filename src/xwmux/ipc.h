@@ -13,13 +13,18 @@ extern "C" {
 
 #define SOCK_PATH "/tmp/xwmux.sock"
 
+constexpr Atom state_json_atom(Display *dpy) {
+    return XInternAtom(dpy, "_XW_STATE_JSON", 0);
+}
+
 enum class MsgType {
     RESOLUTION,
     PREFIX,
     EXIT,
     TMUX_POSITION,
     KILL_PANE,
-    KILL_ORPHANS
+    KILL_ORPHANS,
+    DUMP_STATE
 };
 
 constexpr Atom msg_type_atom(Display *dpy, const MsgType type) {
@@ -36,6 +41,8 @@ constexpr Atom msg_type_atom(Display *dpy, const MsgType type) {
         return XInternAtom(dpy, "_XW_KILL_PANE", 0);
     case MsgType::KILL_ORPHANS:
         return XInternAtom(dpy, "_XW_KILL_ORPHANS", 0);
+    case MsgType::DUMP_STATE:
+        return XInternAtom(dpy, "_XW_DUMP_STATE", 0);
     }
     std::unreachable();
 };
@@ -95,6 +102,10 @@ struct Msg {
 
     constexpr static Msg exit(Display *const dpy) {
         return Msg(dpy, MsgType::EXIT);
+    }
+
+    constexpr static Msg dump_state(Display *const dpy) {
+        return Msg(dpy, MsgType::DUMP_STATE);
     }
 
     // Layout definition/accessors

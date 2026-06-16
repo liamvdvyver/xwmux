@@ -21,6 +21,11 @@ Requires `tmux`, `xorg` server, and one of the following terminals to run:
 * Ensure your terminal is configured to use zero padding/borders on the
   top-left.
 
+If you want xwmux to talk to a specific tmux server, export
+`XWMUX_TMUX_SOCKET` before starting xwmux and before running the tmux hook
+script. When set, xwmux and its helper scripts use `tmux -S "$XWMUX_TMUX_SOCKET" ...`
+instead of the default tmux server.
+
 ## Usage
 
 ### xwmux
@@ -39,10 +44,67 @@ Use the `xwmux-ctl` program to control xwmux.
 
 The following commands are supported (for the end user):
 * `xwmux-ctl exit`: exit the session.
+* `xwmux-ctl dump-state`: print the current tmux/X window mapping state as JSON.
 
 ## Configuration
 
-Set the environment variable `XWMUX_TERMINAL`, or `TERMINAL` to one of the supported options, otherwise first available is used.
+### Environment variables
+
+* `XWMUX_TERMINAL`: terminal emulator used for the root terminal. Supported
+  values are `kitty`, `alacritty`, `st`, and `xterm`.
+* `TERMINAL`: fallback terminal selection if `XWMUX_TERMINAL` is unset.
+* `XWMUX_TMUX_SOCKET`: path to the tmux socket xwmux should use. When set,
+  all WM-side tmux interaction and the helper scripts use that socket via
+  `tmux -S <socket> ...`. This is useful for isolated test setups and for
+  running xwmux against a dedicated tmux server.
+
+If neither `XWMUX_TERMINAL` nor `TERMINAL` is set, xwmux picks the first
+available supported terminal in this order:
+`kitty`, `alacritty`, `st`, `xterm`.
+
+### tmux options used by xwmux
+
+xwmux reads the following tmux options from the connected tmux server:
+
+* `prefix`: used to determine which key should be intercepted and forwarded to
+  tmux.
+* `status-position`: used to compute layout correctly when the tmux status bar
+  is at the top or bottom.
+
+### Hooks
+
+`xwmux-tmux-conf.sh` installs the tmux hooks xwmux needs in order to track pane
+focus, pane creation/destruction, window changes, and layout updates.
+Run it against the same tmux server as xwmux; if `XWMUX_TMUX_SOCKET` is set,
+it will configure that server.
+
+### Test launcher
+
+For nested testing, `src/scripts/xwmux-xephyr-test.sh` starts xwmux inside
+Xephyr with:
+
+* a unique tmux socket
+* a dedicated tmux server
+* a minimal clean tmux config from `src/scripts/xwmux-test.tmux.conf`
+
+This avoids interference from your usual tmux session and `~/.tmux.conf`.
+
+### Testing sync plan
+
+Current integration tests sometimes need to wait for tmux hooks and WM event
+handling to settle before making assertions. A proposed improvement is to add a
+small explicit sync primitive to the IPC layer:
+
+* add a client-to-WM `sync` request
+* have the WM reply by updating a sequence number / response payload
+* have tmux hook scripts issue that sync request after reporting layout/focus
+  changes
+* let tests wait for the sequence number to advance before asserting on focus or
+  state
+
+That would provide a deterministic way to know that hook-triggered updates have
+been processed, instead of relying on sleeps/polling alone.
+
 As mentioned, keys bound in the prefix table are accessible from x windows.
 To bind keys in other tables (e.g. with `bind-key -n`), use a hotkey daemon like `sxhkd`.
 

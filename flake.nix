@@ -32,7 +32,20 @@
         stdenv = pkgs.stdenv;
       in {
         default = pkgs.mkShell {
-          packages = [pkgs.libx11 pkgs.cmake pkgs.clang];
+          packages = [
+            pkgs.libx11
+            pkgs.cmake
+            pkgs.clang
+            pkgs.python3
+            pkgs.tmux
+            pkgs.kitty
+            pkgs.alacritty
+            pkgs.st
+            pkgs.xterm
+            pkgs.xdotool
+            pkgs.xorg.xmessage
+            pkgs.xorg.xorgserver
+          ];
         };
       }
     );

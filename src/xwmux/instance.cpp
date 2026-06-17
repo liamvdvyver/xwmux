@@ -15,6 +15,8 @@ std::string x_event_name(const int type) {
     switch (type) {
     case ConfigureNotify:
         return "ConfigureNotify";
+    case ConfigureRequest:
+        return "ConfigureRequest";
     case MapRequest:
         return "MapRequest";
     case UnmapNotify:
@@ -99,6 +101,27 @@ void WMInstance::handle_x_event<ConfigureNotify>(XConfigureEvent &ev) {
     }
 }
 
+template <>
+void WMInstance::handle_x_event<ConfigureRequest>(XConfigureRequestEvent &ev) {
+    xwmux::log_debug(std::format(
+        "Handling X event: ConfigureRequest window={} mask={} pos=({}, {}) size={}x{} border={} above={} detail={}\n",
+        static_cast<unsigned long>(ev.window), ev.value_mask, ev.x, ev.y,
+        ev.width, ev.height, ev.border_width,
+        static_cast<unsigned long>(ev.above), ev.detail));
+
+    if (!m_tmux_mapping.has_window(ev.window)) {
+        XWindowChanges changes{};
+        changes.x = ev.x;
+        changes.y = ev.y;
+        changes.width = ev.width;
+        changes.height = ev.height;
+        changes.border_width = ev.border_width;
+        changes.sibling = ev.above;
+        changes.stack_mode = ev.detail;
+        XConfigureWindow(m_xstate.display, ev.window, ev.value_mask, &changes);
+    }
+}
+
 template <> void WMInstance::handle_x_event<MapRequest>(XMapRequestEvent &ev) {
     xwmux::log_debug(std::format("Handling X event: MapRequest window={}\n",
                                  static_cast<unsigned long>(ev.window)));
@@ -164,8 +187,9 @@ template <> void WMInstance::handle_x_event<KeyPress>(XEvent &ev) {
     xwmux::log_debug(std::format("Handling X event: KeyPress window={} keycode={} state={}\n",
                                  static_cast<unsigned long>(k_ev.window),
                                  k_ev.keycode, k_ev.state));
-    if (k_ev.keycode == m_xstate.prefix->keycode &&
-        k_ev.state == m_xstate.prefix->modifiers) {
+    if (m_xstate.prefix_initialized &&
+        k_ev.keycode == m_xstate.prefix.keycode &&
+        k_ev.state == m_xstate.prefix.modifiers) {
         // Release the active grab, and generate focus in event
         XUngrabKeyboard(m_xstate.display, CurrentTime);
 
@@ -318,7 +342,14 @@ void WMInstance::handle_client_msg<MsgType::TMUX_POSITION>(const Msg &msg) {
                     "Handling IPC: TMUX_POSITION add_window window={} target=(@{}, %{})\n",
                     static_cast<unsigned long>(window), msg.tm_window(),
                     msg.tm_pane()));
-                m_tmux_mapping.add_window(m_xstate, window, msg.tm_location());
+                if (!m_layout_initialized) {
+                    xwmux::log_warn(std::format(
+                        "Deferring initial GUI geometry until layout initialization for window={} target=(@{}, %{})\n",
+                        static_cast<unsigned long>(window), msg.tm_window(),
+                        msg.tm_pane()));
+                }
+                m_tmux_mapping.add_window(m_xstate, window, msg.tm_location(),
+                                          m_layout_initialized);
                 m_pending_windows.erase(window);
                 name_client(window, msg.tm_location().second);
             }
@@ -331,6 +362,13 @@ void WMInstance::handle_client_msg<MsgType::TMUX_POSITION>(const Msg &msg) {
     // Moves the (possible window) at location to term_position
     // If pane doesn't have a window, do nothing
     // If pane is in seperate window, moves the pane
+    if (!m_layout_initialized) {
+        xwmux::log_warn(std::format(
+            "Skipping pane geometry update before layout initialization for target=(@{}, %{})\n",
+            msg.tm_window(), msg.tm_pane()));
+        return;
+    }
+
     WindowPosition gui_position = m_xstate.term_layout.term_to_screen_pos(
         m_xstate.term_layout.add_bar(msg.window_position()));
 
@@ -374,6 +412,9 @@ void WMInstance::handle_event(XEvent &ev) {
     switch (ev.type) {
     case ConfigureNotify:
         handle_x_event<ConfigureNotify>(ev.xconfigure);
+        break;
+    case ConfigureRequest:
+        handle_x_event<ConfigureRequest>(ev.xconfigurerequest);
         break;
     case MapRequest:
         handle_x_event<MapRequest>(ev.xmaprequest);

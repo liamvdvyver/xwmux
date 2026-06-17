@@ -19,6 +19,8 @@ struct ModifiedKeyCode {
     ModifiedKeyCode(const KeyCode keycode, const uint modifiers)
         : keycode(keycode), modifiers(modifiers) {}
 
+    ModifiedKeyCode() : keycode(0), modifiers(0) {}
+
     KeyCode keycode;
     uint modifiers;
 };
@@ -27,7 +29,8 @@ struct XState {
     XState()
         : display(XOpenDisplay(nullptr)), root(XDefaultRootWindow(display)),
           screen(XDefaultScreenOfDisplay(display)), resolution(display),
-          term_layout(display, Resolution()) {}
+          term_layout(display, Resolution()), term(std::nullopt), prefix(),
+          prefix_initialized(false), grabbed(false) {}
 
     void set_resolution(const Resolution res) {
         resolution = res;
@@ -56,35 +59,48 @@ struct XState {
 
     void set_prefix(const ModifiedKeyCode new_prefix) {
         xwmux::log_debug(std::format(
-            "XState::set_prefix keycode={} modifiers={} grabbed={}\n",
-            new_prefix.keycode, new_prefix.modifiers, grabbed));
-        if (grabbed) {
-            XUngrabKey(display, prefix->keycode, prefix->modifiers, root);
+            "XState::set_prefix keycode={} modifiers={} grabbed={} had_prefix={}\n",
+            new_prefix.keycode, new_prefix.modifiers, grabbed,
+            prefix_initialized));
+        if (grabbed && prefix_initialized) {
+            XUngrabKey(display, prefix.keycode, prefix.modifiers, root);
             XGrabKey(display, new_prefix.keycode, new_prefix.modifiers, root,
                      true, GrabModeAsync, GrabModeSync);
         }
         prefix = new_prefix;
+        prefix_initialized = true;
     }
 
     void grab_prefix() {
-        assert(prefix.has_value());
+        if (!prefix_initialized) {
+            xwmux::log_debug(
+                "XState::grab_prefix skipped because prefix is not initialized\n");
+            return;
+        }
+
         xwmux::log_debug(std::format(
             "XState::grab_prefix keycode={} modifiers={} already_grabbed={}\n",
-            prefix->keycode, prefix->modifiers, grabbed));
-        if (!grabbed && prefix.has_value()) {
-            XGrabKey(display, prefix->keycode, prefix->modifiers, root, true,
+            prefix.keycode, prefix.modifiers, grabbed));
+        if (!grabbed) {
+            XGrabKey(display, prefix.keycode, prefix.modifiers, root, true,
                      GrabModeAsync, GrabModeSync);
         }
         grabbed = true;
     }
 
     void ungrab_prefix() {
-        assert(prefix.has_value());
+        if (!prefix_initialized) {
+            xwmux::log_debug(
+                "XState::ungrab_prefix skipped because prefix is not initialized\n");
+            grabbed = false;
+            return;
+        }
+
         xwmux::log_debug(std::format(
             "XState::ungrab_prefix keycode={} modifiers={} was_grabbed={}\n",
-            prefix->keycode, prefix->modifiers, grabbed));
-        if (grabbed && prefix.has_value()) {
-            XUngrabKey(display, prefix->keycode, prefix->modifiers, root);
+            prefix.keycode, prefix.modifiers, grabbed));
+        if (grabbed) {
+            XUngrabKey(display, prefix.keycode, prefix.modifiers, root);
         }
         grabbed = false;
     }
@@ -128,7 +144,8 @@ struct XState {
 
     std::optional<Window> term;
 
-    std::optional<ModifiedKeyCode> prefix;
+    ModifiedKeyCode prefix;
+    bool prefix_initialized = false;
     bool grabbed{};
 
   private:

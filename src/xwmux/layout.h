@@ -39,8 +39,9 @@ struct WindowPosition {
             width, height));
         if (width == 0 || height == 0) {
             xwmux::log_warn(std::format(
-                "XMoveResizeWindow computed zero-sized geometry for window={} size={}x{}\n",
+                "Skipping XMoveResizeWindow with zero-sized geometry for window={} size={}x{}\n",
                 static_cast<unsigned long>(window), width, height));
+            return;
         }
 
         XMoveResizeWindow(display, window, start.x, start.y, width, height);

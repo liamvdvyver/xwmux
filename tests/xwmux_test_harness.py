@@ -12,6 +12,7 @@ import os
 import select
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -22,6 +23,7 @@ BUILD_DIR = ROOT / "build"
 SCRIPTS_DIR = ROOT / "src" / "scripts"
 LAUNCHER = SCRIPTS_DIR / "xwmux-xephyr-test.sh"
 XWMUX_CTL = BUILD_DIR / "xwmux-ctl"
+TTY_KEY_LOGGER = ROOT / "tests" / "tty_key_logger.py"
 
 
 class XwmuxTestHarness:
@@ -62,7 +64,7 @@ class XwmuxTestHarness:
         if not XWMUX_CTL.exists():
             raise RuntimeError(f"missing binary: {XWMUX_CTL}")
 
-        for program in ["xmessage", "xdotool", "tmux"]:
+        for program in ["xmessage", "xdotool", "tmux", "python3", "xterm"]:
             XwmuxTestHarness.require_program(program)
 
     def start(self):
@@ -186,6 +188,18 @@ class XwmuxTestHarness:
         self.processes.append(proc)
         return proc
 
+    def launch_key_logger_window(self, title="xwmux-key-logger"):
+        """Launch a GUI terminal app that records raw key bytes to a temp file."""
+        log_path = Path(tempfile.mkstemp(prefix="xwmux-keylog.", suffix=".bin")[1])
+        proc = subprocess.Popen(
+            ["xterm", "-title", title, "-e", "python3", str(TTY_KEY_LOGGER), str(log_path)],
+            env=self.test_env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        self.processes.append(proc)
+        return proc, log_path
+
     def tmux(self, *args):
         """Run a tmux command against the isolated test server and return stdout."""
         return subprocess.check_output(
@@ -238,17 +252,39 @@ class XwmuxTestHarness:
 
     def root_terminal_window_id(self):
         """Return the X window id of the xwmux root terminal window."""
-        output = subprocess.check_output(
-            ["xdotool", "search", "--class", "xwmux_root"],
-            env=self.test_env,
-            text=True,
-        )
-        return int(output.splitlines()[-1])
+        def lookup():
+            try:
+                output = subprocess.check_output(
+                    ["xdotool", "search", "--class", "xwmux_root"],
+                    env=self.test_env,
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                )
+            except subprocess.CalledProcessError:
+                return None
+            return int(output.splitlines()[-1])
+
+        return self.wait_for(lookup, message="root terminal window did not appear")
 
     def focused_window_id(self):
         """Return the currently focused X window id in the nested display."""
         output = subprocess.check_output(["xdotool", "getwindowfocus"], env=self.test_env, text=True)
         return int(output.strip())
+
+    def send_key(self, key):
+        """Send a key chord via xdotool into the nested display."""
+        subprocess.check_call(["xdotool", "key", key], env=self.test_env)
+
+    def tmux_client_prefix_active(self):
+        """Return whether tmux reports the attached client is in prefix mode."""
+        output = self.tmux("display-message", "-p", "#{client_prefix}")
+        return output.strip() == "1"
+
+    def read_key_log(self, log_path):
+        """Return raw bytes collected by the GUI key logger so far."""
+        if not Path(log_path).exists():
+            return b""
+        return Path(log_path).read_bytes()
 
     def wait_for(self, predicate, timeout=10, interval=0.2, message="condition was not met"):
         """Poll ``predicate`` until it returns a truthy value, then return it."""

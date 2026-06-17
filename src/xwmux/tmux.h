@@ -121,10 +121,13 @@ struct Workspace {
     Workspace() = default;
 
     void add_window(const XState &state, const TmuxPaneID tm_pane,
-                    const Window window) {
+                    const Window window,
+                    const bool initialize_geometry = true) {
         m_app_windows[tm_pane] = window;
-        state.term_layout.fullscreen_term_position().resize_to(state.display,
-                                                               window);
+        if (initialize_geometry) {
+            state.term_layout.fullscreen_term_position().resize_to(
+                state.display, window);
+        }
     }
 
     void erase_pane(const TmuxPaneID tm_pane) {
@@ -189,8 +192,10 @@ struct TmuxXWindowMapping {
     }
 
     void add_window(const XState &state, const Window window,
-                    const TmuxLocation location) {
-        m_workspaces[location.first].add_window(state, location.second, window);
+                    const TmuxLocation location,
+                    const bool initialize_geometry = true) {
+        m_workspaces[location.first].add_window(state, location.second, window,
+                                                initialize_geometry);
         m_inverse_map[window] = location.second;
         m_inverse_tm_map[location.second] = location.first;
     }

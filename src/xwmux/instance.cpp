@@ -6,6 +6,7 @@
 
 #include <X11/X.h>
 #include <X11/Xlib.h>
+#include <unistd.h>
 
 bool WMInstance::m_existing_wm = false;
 
@@ -223,17 +224,11 @@ template <> void WMInstance::handle_x_event<KeyPress>(XEvent &ev) {
             return;
         }
 
-        // If gui has focus, move to terminal, send prefix and mark
-        // overridden
+        // If gui has focus, activate temporary override and move focus to the
+        // terminal so tmux can consume the prefix sequence.
         if (m_tmux_mapping.is_filled()) {
-
-            // Focus terminal, ignore incoming focus notifications
-            // to avoid WMInstance::re-focusing gui window
-            m_ignore_focus = true;
-            m_xstate.focus_term();
-            m_ignore_focus = false;
-
             m_tmux_mapping.override();
+            m_xstate.focus_term();
         }
 
         // Ensure tmux gets focus
@@ -324,7 +319,7 @@ void WMInstance::handle_client_msg<MsgType::TMUX_POSITION>(const Msg &msg) {
         m_layout_initialized, m_xstate.resolution.x, m_xstate.resolution.y));
     m_tmux_mapping.move_pane(msg.tm_location());
 
-    if (msg.focused() && !m_ignore_focus) {
+    if (msg.focused()) {
 
         // Have window to add
         if (!m_window_q.empty() &&
@@ -362,7 +357,31 @@ void WMInstance::handle_client_msg<MsgType::TMUX_POSITION>(const Msg &msg) {
             }
         }
 
-        m_tmux_mapping.set_active(m_xstate, msg.tm_location(), msg.zoomed());
+        const bool same_active_location =
+            m_tmux_mapping.get_active().has_value() &&
+            m_tmux_mapping.get_active().value() == msg.tm_location();
+        const bool redundant_refocus =
+            msg.zoomed() && same_active_location &&
+            m_tmux_mapping.is_filled(msg.tm_location());
+
+        if (m_tmux_mapping.overridden()) {
+            const bool prefix_active = m_tmux.client_prefix_active();
+            xwmux::log_debug(std::format(
+                "Handling IPC: TMUX_POSITION override_state prefix_active={} same_active_location={} redundant_refocus={}\n",
+                prefix_active, same_active_location, redundant_refocus));
+
+            if (prefix_active) {
+                m_tmux_mapping.set_active_without_focus(
+                    m_xstate, msg.tm_location(), msg.zoomed());
+            } else {
+                m_tmux_mapping.clear_override();
+                m_tmux_mapping.set_active(m_xstate, msg.tm_location(),
+                                          msg.zoomed(), true);
+            }
+        } else {
+            m_tmux_mapping.set_active(m_xstate, msg.tm_location(),
+                                      msg.zoomed(), redundant_refocus);
+        }
     }
 
     // set_position(msg.tm_location(), msg.window_position());

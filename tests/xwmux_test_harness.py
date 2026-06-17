@@ -306,6 +306,20 @@ class XwmuxTestHarness:
         output = subprocess.check_output(["xdotool", "getwindowfocus"], env=self.test_env, text=True)
         return int(output.strip())
 
+    def window_size(self, window_id):
+        """Return ``(width, height)`` for an X window in the nested display."""
+        output = subprocess.check_output(
+            ["xdotool", "getwindowgeometry", "--shell", str(window_id)],
+            env=self.test_env,
+            text=True,
+        )
+        values = {}
+        for line in output.splitlines():
+            if "=" in line:
+                key, value = line.split("=", 1)
+                values[key] = value
+        return int(values["WIDTH"]), int(values["HEIGHT"])
+
     def send_key(self, key):
         """Send a key chord via xdotool into the nested display."""
         subprocess.check_call(["xdotool", "key", key], env=self.test_env)

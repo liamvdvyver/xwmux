@@ -34,6 +34,7 @@ class TmuxClient {
     void name_pane(const TmuxPaneID tm_pane, const std::string_view name) const;
     void send_prefix() const;
     void send_escape() const;
+    bool client_prefix_active() const;
     bool find_pane(const TmuxPaneID tm_pane) const;
 
     const std::optional<std::string> &socket() const { return m_socket; }
@@ -259,10 +260,19 @@ struct TmuxXWindowMapping {
     }
 
     void set_active(XState &state, const TmuxLocation location,
-                    const bool zoomed = false) {
+                    const bool zoomed = false,
+                    const bool redundant_refocus = false) {
         activate_window(state, location.first,
                         zoomed ? std::optional(location.second) : std::nullopt);
-        focus_pane(state, location);
+        focus_pane(state, location, redundant_refocus);
+    }
+
+    void set_active_without_focus(const XState &state,
+                                  const TmuxLocation location,
+                                  const bool zoomed = false) {
+        activate_window(state, location.first,
+                        zoomed ? std::optional(location.second) : std::nullopt);
+        m_active = location;
     }
 
     bool is_filled(const TmuxLocation location) const {
@@ -302,8 +312,13 @@ struct TmuxXWindowMapping {
     // Sets the override flag
     void override() { m_overriden = true; }
 
+    void clear_override() { m_overriden = false; }
+
     // Unsets the override flag and re-focuses the active window
-    void release_override(XState &state) { focus_pane(state, m_active, true); }
+    void release_override(XState &state) {
+        clear_override();
+        focus_pane(state, m_active, true);
+    }
 
     bool overridden() const { return m_overriden; }
 
@@ -439,8 +454,6 @@ struct TmuxXWindowMapping {
 
             XSetInputFocus(state.display, target, 0, 0);
             m_active.second = location.second;
-
-            m_overriden = false;
         } else {
             xwmux::log_debug("TmuxXWindowMapping::focus_pane skipping focus; location unchanged\n");
         }

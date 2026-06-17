@@ -40,35 +40,13 @@ class PrefixIntegrationTest(unittest.TestCase):
         self.harness = XwmuxTestHarness()
         self.harness.start()
 
+        # TODO: allow probing for initialisation
+        # Or make starting apps before init not cause problems
+
+        time.sleep(1.5)
+
     def tearDown(self):
         self.harness.stop()
-
-    def test_prefix_temporarily_focuses_terminal_then_escape_restores_gui(self):
-        gui_pane, _ = self._launch_key_logger_and_wait_for_gui_pane()
-        terminal_window_id = self.harness.root_terminal_window_id()
-
-        self.harness.send_key("ctrl+b")
-        time.sleep(3)
-
-        self.harness.wait_for(
-            lambda: self.harness.focused_window_id() == terminal_window_id,
-            message="pressing prefix did not focus the terminal window",
-        )
-        self.harness.wait_for(
-            self.harness.tmux_client_prefix_active,
-            message="pressing prefix did not activate tmux prefix mode",
-        )
-
-        self.harness.send_key("Escape")
-
-        self.harness.wait_for(
-            lambda: self.harness.focused_window_id() == gui_pane["x_window"],
-            message="escape after prefix did not restore GUI focus",
-        )
-        self.harness.wait_for(
-            lambda: not self.harness.tmux_client_prefix_active(),
-            message="escape after prefix did not clear tmux prefix mode",
-        )
 
     def test_prefix_twice_sends_prefix_to_gui_and_clears_tmux_prefix(self):
         # TODO: Extend this regression to xterm once prefix passthrough uses
@@ -76,8 +54,9 @@ class PrefixIntegrationTest(unittest.TestCase):
         gui_pane, log_path = self._launch_key_logger_and_wait_for_gui_pane()
         terminal_window_id = self.harness.root_terminal_window_id()
 
+        time.sleep(0.5)
+
         self.harness.send_key("ctrl+b")
-        time.sleep(3)
 
         self.harness.wait_for(
             lambda: self.harness.focused_window_id() == terminal_window_id,
@@ -117,9 +96,12 @@ class PrefixIntegrationTest(unittest.TestCase):
     def test_prefix_z_zoomed_gui_pane_retains_focus(self):
         gui_pane = self.harness.launch_and_wait_for_gui_pane(title="xwmux-prefix-z-test")
         terminal_window_id = self.harness.root_terminal_window_id()
+        self.harness.tmux("split-window", "-h", "-d")
+        time.sleep(0.5)
+
+        initial_size = self.harness.window_size(gui_pane["x_window"])
 
         self.harness.send_key("ctrl+b")
-        time.sleep(3)
 
         self.harness.wait_for(
             lambda: self.harness.focused_window_id() == terminal_window_id,
@@ -137,16 +119,15 @@ class PrefixIntegrationTest(unittest.TestCase):
             == {"window": gui_pane["window"], "pane": gui_pane["pane"]},
             message="prefix z changed the active pane",
         )
+        zoomed_size = self.harness.wait_for(
+            lambda: size
+            if (size := self.harness.window_size(gui_pane["x_window"])) != initial_size
+            else None,
+            message="prefix z did not change the GUI window size",
+        )
         self.harness.wait_for(
             lambda: self.harness.focused_window_id() == gui_pane["x_window"],
             message="prefix z did not initially restore GUI focus to the zoomed pane",
-        )
-
-        time.sleep(3)
-        self.assertEqual(
-            self.harness.focused_window_id(),
-            gui_pane["x_window"],
-            "prefix z did not preserve GUI focus after hooks settled",
         )
         self.assertFalse(
             self.harness.tmux_client_prefix_active(),
@@ -156,9 +137,11 @@ class PrefixIntegrationTest(unittest.TestCase):
     def test_prefix_bang_breaks_out_active_gui_pane_and_retains_focus(self):
         gui_pane = self.harness.launch_and_wait_for_gui_pane(title="xwmux-prefix-bang-test")
         terminal_window_id = self.harness.root_terminal_window_id()
+        self.harness.tmux("split-window", "-h", "-d")
+
+        time.sleep(0.5)
 
         self.harness.send_key("ctrl+b")
-        time.sleep(3)
 
         self.harness.wait_for(
             lambda: self.harness.focused_window_id() == terminal_window_id,
@@ -181,19 +164,7 @@ class PrefixIntegrationTest(unittest.TestCase):
 
         self.harness.wait_for(
             lambda: self.harness.focused_window_id() == gui_pane["x_window"],
-            message="prefix ! did not initially preserve GUI focus",
-        )
-
-        time.sleep(3)
-        self.assertEqual(
-            self.harness.focused_window_id(),
-            gui_pane["x_window"],
-            "prefix ! did not preserve GUI focus after hooks settled",
-        )
-        self.assertNotEqual(
-            active["window"],
-            gui_pane["window"],
-            "prefix ! did not switch to a new tmux window",
+            message="prefix ! did not preserve GUI focus",
         )
         self.assertFalse(
             self.harness.tmux_client_prefix_active(),

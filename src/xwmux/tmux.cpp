@@ -1,6 +1,7 @@
 #include "tmux.h"
 #include "log.h"
 
+#include <cstdio>
 #include <format>
 #include <string>
 
@@ -87,6 +88,27 @@ void TmuxClient::send_escape() const {
     if (run(std::format("{} send-keys -K escape", base_command()))) {
         xwmux::log_error("Failed to send escape.\n");
     }
+}
+
+bool TmuxClient::client_prefix_active() const {
+    const std::string command =
+        std::format("{} display-message -p '#{{client_prefix}}'",
+                    base_command());
+    FILE *pipe = popen(command.c_str(), "r");
+    if (!pipe) {
+        xwmux::log_error("Failed to query tmux client_prefix state.\n");
+        return false;
+    }
+
+    char buffer[16] = {};
+    const bool ok = fgets(buffer, sizeof(buffer), pipe) != nullptr;
+    const int status = pclose(pipe);
+    if (!ok || status != 0) {
+        xwmux::log_error("Failed to read tmux client_prefix state.\n");
+        return false;
+    }
+
+    return buffer[0] == '1';
 }
 
 bool TmuxClient::find_pane(const TmuxPaneID tm_pane) const {

@@ -72,7 +72,7 @@ struct WindowPane {
     void notify_unmapped() { m_unmap_req_count--; }
 
     void show(const XState &state) {
-        XMapWindow(state.display, m_window);
+        XMapRaised(state.display, m_window);
         m_hidden = false;
     }
 

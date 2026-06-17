@@ -188,11 +188,46 @@ class XwmuxTestHarness:
         self.processes.append(proc)
         return proc
 
+    def launch_and_wait_for_gui_pane(
+        self,
+        message="xwmux test window",
+        title="xwmux-test-gui",
+        state_message="state dump never showed a GUI window",
+        focus_message="GUI window wasn't focused after launching",
+        x_focus_message="GUI window was not X-focused after launching",
+    ):
+        """Launch a GUI window and wait until xwmux reports it active and focused."""
+        self.launch_gui_window(message=message, title=title)
+
+        state = self.wait_for_state(
+            self.state_has_gui_window,
+            message=state_message,
+        )
+
+        gui_pane = self.get_gui_panes(state)[0]
+
+        self.wait_for_state(
+            lambda s: s.get("active")
+            == {"window": gui_pane["window"], "pane": gui_pane["pane"]},
+            message=focus_message,
+        )
+        self.wait_for(
+            lambda: self.focused_window_id() == gui_pane["x_window"],
+            message=x_focus_message,
+        )
+
+        return gui_pane
+
     def launch_key_logger_window(self, title="xwmux-key-logger"):
-        """Launch a GUI terminal app that records raw key bytes to a temp file."""
+        """Launch a GUI terminal app that records raw key bytes to a temp file.
+
+        TODO: Switch this test helper back to xterm once synthetic prefix
+        passthrough is implemented with XTEST and xterm is supported on that
+        path.
+        """
         log_path = Path(tempfile.mkstemp(prefix="xwmux-keylog.", suffix=".bin")[1])
         proc = subprocess.Popen(
-            ["xterm", "-title", title, "-e", "python3", str(TTY_KEY_LOGGER), str(log_path)],
+            ["kitty", "--name", title, "-e", "python3", str(TTY_KEY_LOGGER), str(log_path)],
             env=self.test_env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

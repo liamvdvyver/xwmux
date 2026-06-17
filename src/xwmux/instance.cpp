@@ -201,7 +201,14 @@ template <> void WMInstance::handle_x_event<KeyPress>(XEvent &ev) {
 
             m_tmux_mapping.release_override(m_xstate);
 
-            // Send to current window
+            // HACK: ensure the focused window has input focus before the keys
+            // are sent.
+            m_xstate.sync();
+
+            // TODO: Replace this XSendEvent-based passthrough with XTEST so
+            // clients like xterm receive input as real keyboard events. For
+            // now, kitty is the main supported terminal for the double-prefix
+            // passthrough path.
             k_ev.display = m_xstate.display;
             k_ev.root = XDefaultRootWindow(m_xstate.display);
             k_ev.same_screen = True;

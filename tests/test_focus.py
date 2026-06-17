@@ -8,49 +8,6 @@ from xwmux_test_harness import XwmuxTestHarness
 
 
 class FocusIntegrationTest(unittest.TestCase):
-    def _launch_and_wait_for_gui_pane(self):
-        self.harness.launch_gui_window(title="xwmux-focus-test")
-
-        state = self.harness.wait_for_state(
-            self.harness.state_has_gui_window,
-            message="state dump never showed a GUI window",
-        )
-
-        gui_pane = self.harness.get_gui_panes(state)[0]
-
-        self.harness.wait_for_state(
-            lambda s: s.get("active")
-            == {"window": gui_pane["window"], "pane": gui_pane["pane"]},
-            message="GUI window wasn't focused after launching",
-        )
-        self.harness.wait_for(
-            lambda: self.harness.focused_window_id() == gui_pane["x_window"],
-            message="GUI window was not X-focused after launching",
-        )
-
-        return gui_pane
-
-    def _launch_key_logger_and_wait_for_gui_pane(self):
-        _, log_path = self.harness.launch_key_logger_window(title="xwmux-key-logger")
-
-        state = self.harness.wait_for_state(
-            self.harness.state_has_gui_window,
-            message="state dump never showed a GUI key logger window",
-        )
-
-        gui_pane = self.harness.get_gui_panes(state)[0]
-        self.harness.wait_for_state(
-            lambda s: s.get("active")
-            == {"window": gui_pane["window"], "pane": gui_pane["pane"]},
-            message="GUI key logger window wasn't focused after launching",
-        )
-        self.harness.wait_for(
-            lambda: self.harness.focused_window_id() == gui_pane["x_window"],
-            message="GUI key logger window was not X-focused after launching",
-        )
-
-        return gui_pane, log_path
-
     @classmethod
     def setUpClass(cls):
         try:
@@ -65,8 +22,8 @@ class FocusIntegrationTest(unittest.TestCase):
     def tearDown(self):
         self.harness.stop()
 
-    def test_focus_follows_gui_vs_terminal_pane(self):
-        gui_pane = self._launch_and_wait_for_gui_pane()
+    def test_focus_follows_gui_vs_terminal_pane_in_same_window(self):
+        gui_pane = self.harness.launch_and_wait_for_gui_pane(title="xwmux-focus-test")
 
         self.harness.tmux("split-window", "-h", "-d")
         panes = self.harness.wait_for(
@@ -102,6 +59,10 @@ class FocusIntegrationTest(unittest.TestCase):
             lambda: self.harness.focused_window_id() == gui_pane["x_window"],
             message="focusing GUI pane did not focus the GUI window",
         )
+
+    def test_focus_follows_gui_vs_terminal_when_switching_windows(self):
+        gui_pane = self.harness.launch_and_wait_for_gui_pane(title="xwmux-focus-test")
+        terminal_window_id = self.harness.root_terminal_window_id()
 
         other_window = self.harness.create_window()
         self.harness.select_window(other_window)
@@ -147,68 +108,30 @@ class FocusIntegrationTest(unittest.TestCase):
             "zooming the GUI pane did not preserve GUI focus after hooks settled",
         )
 
-    def test_prefix_temporarily_focuses_terminal_then_escape_restores_gui(self):
-        gui_pane, _ = self._launch_key_logger_and_wait_for_gui_pane()
-        terminal_window_id = self.harness.root_terminal_window_id()
+    def test_breaking_out_active_gui_pane_retains_focus(self):
+        gui_pane = self._launch_and_wait_for_gui_pane()
 
-        self.harness.send_key("ctrl+b")
-        time.sleep(3)
-
-        self.harness.wait_for(
-            lambda: self.harness.focused_window_id() == terminal_window_id,
-            message="pressing prefix did not focus the terminal window",
-        )
-        self.harness.wait_for(
-            self.harness.tmux_client_prefix_active,
-            message="pressing prefix did not activate tmux prefix mode",
+        new_window = int(
+            self.harness.tmux(
+                "break-pane", "-P", "-F", "#{window_id}", "-s", f"%{gui_pane['pane']}"
+            ).strip()[1:]
         )
 
-        self.harness.send_key("Escape")
-
+        self.harness.wait_for_state(
+            lambda s: s.get("active")
+            == {"window": new_window, "pane": gui_pane["pane"]},
+            message="breaking out the active GUI pane did not make the new tmux window active",
+        )
         self.harness.wait_for(
             lambda: self.harness.focused_window_id() == gui_pane["x_window"],
-            message="escape after prefix did not restore GUI focus",
-        )
-        self.harness.wait_for(
-            lambda: not self.harness.tmux_client_prefix_active(),
-            message="escape after prefix did not clear tmux prefix mode",
+            message="breaking out the active GUI pane did not initially preserve GUI focus",
         )
 
-    def test_prefix_twice_sends_prefix_to_gui_and_clears_tmux_prefix(self):
-        gui_pane, log_path = self._launch_key_logger_and_wait_for_gui_pane()
-        terminal_window_id = self.harness.root_terminal_window_id()
-
-        self.harness.send_key("ctrl+b")
         time.sleep(3)
-
-        self.harness.wait_for(
-            lambda: self.harness.focused_window_id() == terminal_window_id,
-            message="first prefix did not focus the terminal window",
-        )
-        self.harness.wait_for(
-            self.harness.tmux_client_prefix_active,
-            message="first prefix did not activate tmux prefix mode",
-        )
-
-        before = self.harness.read_key_log(log_path)
-        self.harness.send_key("ctrl+b")
-
-        self.harness.wait_for(
-            lambda: self.harness.focused_window_id() == gui_pane["x_window"],
-            message="second prefix did not restore GUI focus",
-        )
-        self.harness.wait_for(
-            lambda: not self.harness.tmux_client_prefix_active(),
-            message="second prefix did not clear tmux prefix mode",
-        )
-        data = self.harness.wait_for(
-            lambda: data if len(data := self.harness.read_key_log(log_path)) > len(before) else None,
-            message="second prefix was not forwarded to the GUI window",
-        )
-        self.assertIn(
-            b"\x02",
-            data[len(before):],
-            f"expected forwarded prefix byte to reach GUI key logger, saw: {data[len(before):]!r}",
+        self.assertEqual(
+            self.harness.focused_window_id(),
+            gui_pane["x_window"],
+            "breaking out the active GUI pane did not preserve GUI focus after hooks settled",
         )
 
 

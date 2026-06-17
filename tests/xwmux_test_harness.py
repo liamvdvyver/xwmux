@@ -11,6 +11,8 @@ import json
 import os
 import select
 import subprocess
+import sys
+import threading
 import time
 from pathlib import Path
 
@@ -35,6 +37,7 @@ class XwmuxTestHarness:
 
     def __init__(self):
         self.launcher = None
+        self.launcher_log_thread = None
         self.test_env = None
         self.processes = []
 
@@ -43,6 +46,11 @@ class XwmuxTestHarness:
         """Fail if an external program needed by the tests is unavailable."""
         if subprocess.run(["sh", "-c", f"command -v {name} >/dev/null"]).returncode != 0:
             raise RuntimeError(f"{name} is not available in PATH")
+
+    @staticmethod
+    def wants_verbose_logs():
+        """True when the current test invocation asked for verbose output."""
+        return any(arg in {"-v", "--verbose"} for arg in sys.argv[1:])
 
     @staticmethod
     def check_prerequisites():
@@ -66,8 +74,12 @@ class XwmuxTestHarness:
         launcher_env = os.environ.copy()
         launcher_env["PATH"] = f"{BUILD_DIR}:{SCRIPTS_DIR}:{launcher_env.get('PATH', '')}"
 
+        launcher_cmd = [str(LAUNCHER)]
+        if self.wants_verbose_logs():
+            launcher_cmd.append("-v")
+
         self.launcher = subprocess.Popen(
-            [str(LAUNCHER)],
+            launcher_cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -79,7 +91,24 @@ class XwmuxTestHarness:
         self.test_env = launcher_env.copy()
         self.test_env["DISPLAY"] = startup["DISPLAY"]
         self.test_env["XWMUX_TMUX_SOCKET"] = startup["XWMUX_TMUX_SOCKET"]
+
+        if self.wants_verbose_logs():
+            self.launcher_log_thread = threading.Thread(
+                target=self._forward_launcher_logs,
+                daemon=True,
+            )
+            self.launcher_log_thread.start()
+
         return startup
+
+    def _forward_launcher_logs(self):
+        """Forward launcher output to this process' stderr after startup."""
+        if self.launcher is None or self.launcher.stdout is None:
+            return
+
+        for line in self.launcher.stdout:
+            sys.stderr.write(line)
+            sys.stderr.flush()
 
     def stop(self):
         """Terminate all test-owned processes and shut down xwmux cleanly."""
@@ -103,6 +132,10 @@ class XwmuxTestHarness:
             except subprocess.TimeoutExpired:
                 self.launcher.kill()
                 self.launcher.wait(timeout=5)
+
+        if self.launcher_log_thread is not None:
+            self.launcher_log_thread.join(timeout=1)
+            self.launcher_log_thread = None
 
     def _read_startup_env(self):
         """Read launcher stdout until nested DISPLAY and tmux socket are known."""

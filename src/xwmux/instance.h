@@ -18,6 +18,7 @@ extern "C" {
 #include <unordered_set>
 
 #include "ipc.h"
+#include "log.h"
 #include "tmux.h"
 
 class WMInstance {
@@ -33,7 +34,7 @@ class WMInstance {
     void init() {
 
         if (!m_xstate.display) {
-            std::cerr << "Failed to open display\n";
+            xwmux::log_error("Failed to open display\n");
             exit(EXIT_FAILURE);
         }
 
@@ -47,7 +48,7 @@ class WMInstance {
         m_xstate.sync();
 
         if (m_existing_wm) {
-            std::cerr << "Another wm is running\n";
+            xwmux::log_error("Another wm is running\n");
             exit(EXIT_FAILURE);
         }
 
@@ -100,13 +101,14 @@ class WMInstance {
     // When sending tmux commands to pane from gui focus
     bool m_ignore_focus = false;
 
+    // Whether terminal layout/resolution has been initialized from IPC
+    bool m_layout_initialized = false;
+
     //--- Helpers ------------------------------------------------------------//
 
     void notify(std::string_view msg) const {
-        if (std::system(std::format("notify-send '{}'", msg).c_str())) {
-            // Fallback: send via tmux
-            m_tmux.send_message(msg);
-        }
+        xwmux::log_info(msg);
+        m_tmux.send_message(msg);
     }
 
     void name_client(Window window, TmuxPaneID pane) {
@@ -143,7 +145,10 @@ class WMInstance {
         char *err_msg = (char *)malloc(err_msg_len + 1);
         XGetErrorText(display, err->error_code, err_msg, err_msg_len);
 
-        std::cerr << err_msg << std::endl;
+        xwmux::log_error(std::format(
+            "X11 error: {} (code={}, request_code={}, minor_code={}, resource_id={}, serial={})\n",
+            err_msg, err->error_code, err->request_code, err->minor_code,
+            static_cast<unsigned long>(err->resourceid), err->serial));
         free(err_msg);
         return EXIT_SUCCESS;
     }

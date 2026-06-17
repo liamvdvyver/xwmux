@@ -11,6 +11,7 @@ extern "C" {
 #include <string>
 
 #include "layout.h"
+#include "log.h"
 
 const std::string ROOT_CLASS = "xwmux_root";
 
@@ -37,15 +38,26 @@ struct XState {
         }
     }
 
-    void set_term(const Window term) { this->term = term; }
+    void set_term(const Window term) {
+        xwmux::log_debug(std::format("XState::set_term window={}\n",
+                                     static_cast<unsigned long>(term)));
+        this->term = term;
+    }
 
     void sync() { XSync(display, 0); }
 
     void focus_term() const {
-        XSetInputFocus(display, term.value_or(root), 0, 0);
+        const Window target = term.value_or(root);
+        xwmux::log_debug(std::format("XState::focus_term target={} has_term={}\n",
+                                     static_cast<unsigned long>(target),
+                                     term.has_value()));
+        XSetInputFocus(display, target, 0, 0);
     }
 
     void set_prefix(const ModifiedKeyCode new_prefix) {
+        xwmux::log_debug(std::format(
+            "XState::set_prefix keycode={} modifiers={} grabbed={}\n",
+            new_prefix.keycode, new_prefix.modifiers, grabbed));
         if (grabbed) {
             XUngrabKey(display, prefix->keycode, prefix->modifiers, root);
             XGrabKey(display, new_prefix.keycode, new_prefix.modifiers, root,
@@ -56,6 +68,9 @@ struct XState {
 
     void grab_prefix() {
         assert(prefix.has_value());
+        xwmux::log_debug(std::format(
+            "XState::grab_prefix keycode={} modifiers={} already_grabbed={}\n",
+            prefix->keycode, prefix->modifiers, grabbed));
         if (!grabbed && prefix.has_value()) {
             XGrabKey(display, prefix->keycode, prefix->modifiers, root, true,
                      GrabModeAsync, GrabModeSync);
@@ -65,6 +80,9 @@ struct XState {
 
     void ungrab_prefix() {
         assert(prefix.has_value());
+        xwmux::log_debug(std::format(
+            "XState::ungrab_prefix keycode={} modifiers={} was_grabbed={}\n",
+            prefix->keycode, prefix->modifiers, grabbed));
         if (grabbed && prefix.has_value()) {
             XUngrabKey(display, prefix->keycode, prefix->modifiers, root);
         }

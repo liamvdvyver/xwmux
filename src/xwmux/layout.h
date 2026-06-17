@@ -5,7 +5,10 @@ extern "C" {
 }
 
 #include <cstdint>
+#include <format>
 #include <utility>
+
+#include "log.h"
 
 struct Point {
     std::size_t x;
@@ -28,9 +31,19 @@ struct WindowPosition {
     Point end;
 
     void resize_to(Display *const display, const Window window) const {
+        const auto width = end.x - start.x;
+        const auto height = end.y - start.y;
+        xwmux::log_debug(std::format(
+            "XMoveResizeWindow window={} start=({}, {}) end=({}, {}) size={}x{}\n",
+            static_cast<unsigned long>(window), start.x, start.y, end.x, end.y,
+            width, height));
+        if (width == 0 || height == 0) {
+            xwmux::log_warn(std::format(
+                "XMoveResizeWindow computed zero-sized geometry for window={} size={}x{}\n",
+                static_cast<unsigned long>(window), width, height));
+        }
 
-        XMoveResizeWindow(display, window, start.x, start.y, end.x - start.x,
-                          end.y - start.y);
+        XMoveResizeWindow(display, window, start.x, start.y, width, height);
     }
 };
 

@@ -9,8 +9,89 @@
 
 bool WMInstance::m_existing_wm = false;
 
+namespace {
+
+std::string x_event_name(const int type) {
+    switch (type) {
+    case ConfigureNotify:
+        return "ConfigureNotify";
+    case MapRequest:
+        return "MapRequest";
+    case UnmapNotify:
+        return "UnmapNotify";
+    case DestroyNotify:
+        return "DestroyNotify";
+    case KeyPress:
+        return "KeyPress";
+    case KeyRelease:
+        return "KeyRelease";
+    case ClientMessage:
+        return "ClientMessage";
+    case PropertyNotify:
+        return "PropertyNotify";
+    default:
+        return std::format("XEvent({})", type);
+    }
+}
+
+std::string msg_type_name(Display *display, const Atom atom) {
+    if (atom == msg_type_atom(display, MsgType::RESOLUTION)) {
+        return "RESOLUTION";
+    }
+    if (atom == msg_type_atom(display, MsgType::PREFIX)) {
+        return "PREFIX";
+    }
+    if (atom == msg_type_atom(display, MsgType::EXIT)) {
+        return "EXIT";
+    }
+    if (atom == msg_type_atom(display, MsgType::TMUX_POSITION)) {
+        return "TMUX_POSITION";
+    }
+    if (atom == msg_type_atom(display, MsgType::KILL_PANE)) {
+        return "KILL_PANE";
+    }
+    if (atom == msg_type_atom(display, MsgType::KILL_ORPHANS)) {
+        return "KILL_ORPHANS";
+    }
+    if (atom == msg_type_atom(display, MsgType::DUMP_STATE)) {
+        return "DUMP_STATE";
+    }
+    return std::format("Atom({})", atom);
+}
+
+std::string msg_summary(Display *display, const Msg &msg,
+                        const XClientMessageEvent &ev) {
+    const std::string type = msg_type_name(display, ev.message_type);
+    if (ev.message_type == msg_type_atom(display, MsgType::TMUX_POSITION)) {
+        const WindowPosition pos = msg.window_position();
+        return std::format(
+            "{} window=@{} pane=%{} focused={} zoomed={} dead={} pos=({},{})->({},{})",
+            type, msg.tm_window(), msg.tm_pane(), msg.focused(), msg.zoomed(),
+            msg.dead(), pos.start.x, pos.start.y, pos.end.x, pos.end.y);
+    }
+    if (ev.message_type == msg_type_atom(display, MsgType::RESOLUTION)) {
+        const Resolution chars = msg.res_chars();
+        const Resolution px = msg.res_px();
+        return std::format("{} chars={}x{} px={}x{} bar_pos={}", type,
+                           chars.x, chars.y, px.x, px.y, msg.bar_pos());
+    }
+    if (ev.message_type == msg_type_atom(display, MsgType::PREFIX)) {
+        return std::format("{} keycode={} mods={}", type, msg.keycode(),
+                           msg.mods());
+    }
+    if (ev.message_type == msg_type_atom(display, MsgType::KILL_PANE)) {
+        return std::format("{} pane=%{}", type, msg.tm_pane());
+    }
+    return type;
+}
+
+} // namespace
+
 template <>
 void WMInstance::handle_x_event<ConfigureNotify>(XConfigureEvent &ev) {
+    xwmux::log_debug(std::format("Handling X event: ConfigureNotify window={} size={}x{}\n",
+                                 static_cast<unsigned long>(ev.window), ev.width,
+                                 ev.height));
     if (ev.window == m_xstate.root) {
         m_xstate.set_resolution(
             {static_cast<size_t>(ev.width), static_cast<size_t>(ev.height)});
@@ -19,6 +100,8 @@ void WMInstance::handle_x_event<ConfigureNotify>(XConfigureEvent &ev) {
 }
 
 template <> void WMInstance::handle_x_event<MapRequest>(XMapRequestEvent &ev) {
+    xwmux::log_debug(std::format("Handling X event: MapRequest window={}\n",
+                                 static_cast<unsigned long>(ev.window)));
 
     Window w = ev.window;
     if (m_xstate.override_redirect(w)) {
@@ -31,7 +114,7 @@ template <> void WMInstance::handle_x_event<MapRequest>(XMapRequestEvent &ev) {
     } else if (!m_pending_windows.count(w)) {
 
         if (m_xstate.init_state(w).value_or(NormalState) != NormalState) {
-            log_msg("Window started in iconic state\n");
+            xwmux::log_warn("Window started in iconic state\n");
         }
 
         m_window_q.push(w);
@@ -44,6 +127,8 @@ template <> void WMInstance::handle_x_event<MapRequest>(XMapRequestEvent &ev) {
 }
 
 template <> void WMInstance::handle_x_event<UnmapNotify>(XUnmapEvent &ev) {
+    xwmux::log_debug(std::format("Handling X event: UnmapNotify window={}\n",
+                                 static_cast<unsigned long>(ev.window)));
     if (m_tmux_mapping.has_window(ev.window)) {
         WindowPane &wp = m_tmux_mapping.get(ev.window);
         if (wp.unmap_pending()) {
@@ -59,6 +144,8 @@ template <> void WMInstance::handle_x_event<UnmapNotify>(XUnmapEvent &ev) {
 
 template <>
 void WMInstance::handle_x_event<DestroyNotify>(XDestroyWindowEvent &ev) {
+    xwmux::log_debug(std::format("Handling X event: DestroyNotify window={}\n",
+                                 static_cast<unsigned long>(ev.window)));
     if (ev.window == m_xstate.term) {
         m_xstate.term = {};
         m_xstate.open_term();
@@ -74,6 +161,9 @@ void WMInstance::handle_x_event<DestroyNotify>(XDestroyWindowEvent &ev) {
 
 template <> void WMInstance::handle_x_event<KeyPress>(XEvent &ev) {
     XKeyPressedEvent &k_ev = ev.xkey;
+    xwmux::log_debug(std::format("Handling X event: KeyPress window={} keycode={} state={}\n",
+                                 static_cast<unsigned long>(k_ev.window),
+                                 k_ev.keycode, k_ev.state));
     if (k_ev.keycode == m_xstate.prefix->keycode &&
         k_ev.state == m_xstate.prefix->modifiers) {
         // Release the active grab, and generate focus in event
@@ -124,6 +214,9 @@ template <> void WMInstance::handle_x_event<KeyPress>(XEvent &ev) {
 
 template <>
 void WMInstance::handle_x_event<PropertyNotify>(XPropertyEvent &ev) {
+    xwmux::log_debug(std::format("Handling X event: PropertyNotify window={} atom={}\n",
+                                 static_cast<unsigned long>(ev.window),
+                                 ev.atom));
     if (m_tmux_mapping.has_window(ev.window) &&
         ev.atom == XInternAtom(m_xstate.display, "WM_NAME", 0)) {
         TmuxPaneID pane = m_tmux_mapping.find(ev.window).second;
@@ -133,20 +226,32 @@ void WMInstance::handle_x_event<PropertyNotify>(XPropertyEvent &ev) {
 
 template <>
 void WMInstance::handle_client_msg<MsgType::RESOLUTION>(const Msg &msg) {
+    xwmux::log_debug(std::format(
+        "Handling IPC: RESOLUTION chars={}x{} px={}x{} bar_pos={} layout_initialized_before={}\n",
+        msg.res_chars().x, msg.res_chars().y, msg.res_px().x, msg.res_px().y,
+        msg.bar_pos(), m_layout_initialized));
     m_xstate.term_layout.set_term_resolution(msg.res_chars(), msg.res_px());
+     
 
     m_xstate.term_layout.set_bar_position(
         static_cast<TmuxBarPosition>(msg.bar_pos()));
+    m_layout_initialized = true;
+    xwmux::log_debug(std::format(
+        "Handling IPC: RESOLUTION complete layout_initialized_after={} screen={}x{}\n",
+        m_layout_initialized, m_xstate.resolution.x, m_xstate.resolution.y));
 }
 
 template <>
 void WMInstance::handle_client_msg<MsgType::PREFIX>(const Msg &msg) {
+    xwmux::log_debug(std::format("Handling IPC: PREFIX keycode={} mods={}\n",
+                                 msg.keycode(), msg.mods()));
     m_xstate.set_prefix(msg.mod_kc());
 }
 
 template <>
 void WMInstance::handle_client_msg<MsgType::KILL_PANE>(const Msg &msg) {
-    (void)msg;
+    xwmux::log_debug(std::format("Handling IPC: KILL_PANE pane=%{}\n",
+                                 msg.tm_pane()));
     if (m_tmux_mapping.is_filled()) {
         Window w = m_tmux_mapping.current_window();
         m_tmux_mapping.kill_client(w, m_xstate.display);
@@ -158,6 +263,7 @@ void WMInstance::handle_client_msg<MsgType::KILL_PANE>(const Msg &msg) {
 template <>
 void WMInstance::handle_client_msg<MsgType::KILL_ORPHANS>(const Msg &msg) {
     (void)msg;
+    xwmux::log_debug("Handling IPC: KILL_ORPHANS\n");
     for (Window w : m_tmux_mapping.find_orphans(m_tmux)) {
         m_tmux_mapping.kill_client(w, m_xstate.display);
         m_tmux_mapping.remove_window(m_tmux, w);
@@ -166,17 +272,25 @@ void WMInstance::handle_client_msg<MsgType::KILL_ORPHANS>(const Msg &msg) {
 
 template <> void WMInstance::handle_client_msg<MsgType::EXIT>(const Msg &msg) {
     (void)msg;
+    xwmux::log_debug("Handling IPC: EXIT\n");
     stop();
 }
 
 template <>
 void WMInstance::handle_client_msg<MsgType::DUMP_STATE>(const Msg &msg) {
     (void)msg;
+    xwmux::log_debug("Handling IPC: DUMP_STATE\n");
     write_state_json();
 }
 
 template <>
 void WMInstance::handle_client_msg<MsgType::TMUX_POSITION>(const Msg &msg) {
+    xwmux::log_debug(std::format(
+        "Handling IPC: TMUX_POSITION window=@{} pane=%{} focused={} zoomed={} dead={} pos=({},{})->({},{}) layout_initialized={} screen={}x{}\n",
+        msg.tm_window(), msg.tm_pane(), msg.focused(), msg.zoomed(),
+        msg.dead(), msg.window_position().start.x, msg.window_position().start.y,
+        msg.window_position().end.x, msg.window_position().end.y,
+        m_layout_initialized, m_xstate.resolution.x, m_xstate.resolution.y));
     m_tmux_mapping.move_pane(msg.tm_location());
 
     if (msg.focused() && !m_ignore_focus) {
@@ -184,6 +298,11 @@ void WMInstance::handle_client_msg<MsgType::TMUX_POSITION>(const Msg &msg) {
         // Have window to add
         if (!m_window_q.empty() &&
             !m_tmux_mapping.is_filled(msg.tm_location()) && msg.dead()) {
+
+            xwmux::log_debug(std::format(
+                "Handling IPC: TMUX_POSITION attaching_pending_window layout_initialized={} pending_queue_size={} target=(@{}, %{})\n",
+                m_layout_initialized, m_window_q.size(), msg.tm_window(),
+                msg.tm_pane()));
 
             Window window = m_window_q.front();
             m_window_q.pop();
@@ -195,6 +314,10 @@ void WMInstance::handle_client_msg<MsgType::TMUX_POSITION>(const Msg &msg) {
                 m_tmux.kill_pane(msg.tm_location().second);
 
             } else {
+                xwmux::log_debug(std::format(
+                    "Handling IPC: TMUX_POSITION add_window window={} target=(@{}, %{})\n",
+                    static_cast<unsigned long>(window), msg.tm_window(),
+                    msg.tm_pane()));
                 m_tmux_mapping.add_window(m_xstate, window, msg.tm_location());
                 m_pending_windows.erase(window);
                 name_client(window, msg.tm_location().second);
@@ -219,6 +342,9 @@ void WMInstance::handle_client_msg<MsgType::TMUX_POSITION>(const Msg &msg) {
 template <>
 void WMInstance::handle_x_event<ClientMessage>(XClientMessageEvent &ev) {
     const Msg msg{ev};
+    xwmux::log_debug(std::format("Handling X event: {} {}\n",
+                                 x_event_name(ClientMessage),
+                                 msg_summary(m_xstate.display, msg, ev)));
     if (ev.message_type ==
         msg_type_atom(m_xstate.display, MsgType::RESOLUTION)) {
         handle_client_msg<MsgType::RESOLUTION>(msg);
@@ -244,6 +370,7 @@ void WMInstance::handle_x_event<ClientMessage>(XClientMessageEvent &ev) {
 }
 
 void WMInstance::handle_event(XEvent &ev) {
+    xwmux::log_debug(std::format("Dispatching X event: {}\n", x_event_name(ev.type)));
     switch (ev.type) {
     case ConfigureNotify:
         handle_x_event<ConfigureNotify>(ev.xconfigure);

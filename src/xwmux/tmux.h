@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "log.h"
 #include "xwrapper.h"
 
 using TmuxWindowID = int32_t;
@@ -379,6 +380,11 @@ struct TmuxXWindowMapping {
   private:
     void activate_window(const XState &state, TmuxWindowID tm_window,
                          std::optional<TmuxPaneID> zoomed_pane) {
+        xwmux::log_debug(std::format(
+            "TmuxXWindowMapping::activate_window target_window=@{} previous_active=({}, {}) zoomed_pane={}\n",
+            tm_window, m_active.first, m_active.second,
+            zoomed_pane.has_value() ? std::to_string(zoomed_pane.value())
+                                    : std::string("none")));
         if (m_active.first != tm_window) {
 
             // Deactivate old
@@ -399,6 +405,10 @@ struct TmuxXWindowMapping {
     // Grabs/ungrabs prefix as needed
     void focus_pane(XState &state, const TmuxLocation location,
                     bool redundant_refocus = false) {
+        xwmux::log_debug(std::format(
+            "TmuxXWindowMapping::focus_pane target=(@{}, %{}) current=(@{}, %{}) redundant_refocus={}\n",
+            location.first, location.second, m_active.first, m_active.second,
+            redundant_refocus));
 
         if (m_active != location || redundant_refocus) {
 
@@ -412,6 +422,10 @@ struct TmuxXWindowMapping {
                     ? m_workspaces[location.first][location.second].get_window()
                     : state.term.value_or(state.root);
 
+            xwmux::log_debug(std::format(
+                "TmuxXWindowMapping::focus_pane applying_focus has_x_window={} target={}\n",
+                has_x_window, static_cast<unsigned long>(target)));
+
             if (has_x_window) {
                 state.grab_prefix();
             } else {
@@ -422,6 +436,8 @@ struct TmuxXWindowMapping {
             m_active.second = location.second;
 
             m_overriden = false;
+        } else {
+            xwmux::log_debug("TmuxXWindowMapping::focus_pane skipping focus; location unchanged\n");
         }
     }
 

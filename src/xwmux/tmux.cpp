@@ -42,7 +42,7 @@ int TmuxClient::run(const std::string &command) const {
 
 void TmuxClient::split_window() const {
     if (run(std::format("{} split-window '' \\; break-pane", base_command()))) {
-        log_msg("Failed to spawn window.\n");
+        xwmux::log_error("Failed to spawn window.\n");
     }
 }
 
@@ -52,18 +52,18 @@ void TmuxClient::send_message(const std::string_view msg) const {
                         shell_quote(msg)))) {
         fail_str = " (FAILED)";
     }
-    log_msg(std::format("Sending message: {}{}\n", msg, fail_str));
+    xwmux::log_info(std::format("Sending message: {}{}\n", msg, fail_str));
 }
 
 void TmuxClient::kill_pane(const TmuxPaneID tm_pane) const {
     if (run(std::format("{} kill-pane -t %{}", base_command(), tm_pane))) {
-        log_msg("Failed to kill pane.\n");
+        xwmux::log_error("Failed to kill pane.\n");
     }
 }
 
 void TmuxClient::focus_location(const TmuxPaneID tm_pane) const {
     if (run(std::format("{} select-pane -t %{}", base_command(), tm_pane))) {
-        log_msg("Failed to focus location.\n");
+        xwmux::log_error("Failed to focus location.\n");
     }
 }
 
@@ -71,7 +71,7 @@ void TmuxClient::name_pane(const TmuxPaneID tm_pane,
                            const std::string_view name) const {
     if (run(std::format("{} select-pane -t %{} -T {}", base_command(), tm_pane,
                         shell_quote(name)))) {
-        log_msg("Failed to name pane.\n");
+        xwmux::log_error("Failed to name pane.\n");
     }
 }
 
@@ -79,13 +79,13 @@ void TmuxClient::send_prefix() const {
     if (run(std::format(
             "{} send-keys -K $({} show-option prefix | cut -f 2 -d ' ')",
             base_command(), base_command()))) {
-        log_msg("Failed to send prefix.\n");
+        xwmux::log_error("Failed to send prefix.\n");
     }
 }
 
 void TmuxClient::send_escape() const {
     if (run(std::format("{} send-keys -K escape", base_command()))) {
-        log_msg("Failed to send escape.\n");
+        xwmux::log_error("Failed to send escape.\n");
     }
 }
 

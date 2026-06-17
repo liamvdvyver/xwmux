@@ -2,6 +2,21 @@
 
 set -eu
 
+VERBOSE=0
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -v)
+            VERBOSE=1
+            ;;
+        *)
+            echo "Usage: $0 [-v]" >&2
+            exit 1
+            ;;
+    esac
+    shift
+done
+
 ROOT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)
 BUILD_DIR="$ROOT_DIR/build"
 SCRIPTS_DIR="$ROOT_DIR/src/scripts"
@@ -96,7 +111,12 @@ echo "  TMUX_CONF=$TMUX_CONF"
 if [ -n "${XWMUX_TERMINAL:-}" ]; then
     echo "  XWMUX_TERMINAL=$XWMUX_TERMINAL"
 fi
-
-"$XWMUX_BIN" &
+if [ "$VERBOSE" -eq 1 ]; then
+    echo "  XWMUX_VERBOSE=-vv"
+    echo "--- xwmux logs follow ---"
+    "$XWMUX_BIN" -vv &
+else
+    "$XWMUX_BIN" &
+fi
 XWMUX_PID=$!
 wait "$XWMUX_PID"

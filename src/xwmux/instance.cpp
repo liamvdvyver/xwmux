@@ -110,7 +110,8 @@ void WMInstance::handle_x_event<ConfigureRequest>(XConfigureRequestEvent &ev) {
         ev.width, ev.height, ev.border_width,
         static_cast<unsigned long>(ev.above), ev.detail));
 
-    if (!m_tmux_mapping.has_window(ev.window)) {
+    // Ignore reqests for managed windows or visible root terminal
+    if (!m_tmux_mapping.has_window(ev.window) && !(m_xstate.term.has_value() && ev.window == m_xstate.term.value())) {
         XWindowChanges changes{};
         changes.x = ev.x;
         changes.y = ev.y;
@@ -130,10 +131,10 @@ template <> void WMInstance::handle_x_event<MapRequest>(XMapRequestEvent &ev) {
     Window w = ev.window;
     if (m_xstate.override_redirect(w)) {
     } else if (m_xstate.is_root_term(w)) {
+        m_xstate.set_term(w);
         m_xstate.resolution.fullscreen().resize_to(m_xstate.display, w);
         XLowerWindow(m_xstate.display, w);
         XMapWindow(m_xstate.display, w);
-        m_xstate.set_term(w);
         m_xstate.focus_term();
     } else if (!m_pending_windows.count(w)) {
 

@@ -129,7 +129,11 @@ struct KillPane : Command {
             return Msg::kill_ophans(dpy);
         }
 
-        tm_pane = stoi(std::string(argv[1]));
+        if (argv[1][0] != '%') {
+            return std::nullopt;
+        }
+
+        tm_pane = stoi(std::string(argv[1] + 1));
         return Msg::kill_pane(dpy, tm_pane);
     }
 };

@@ -201,7 +201,7 @@ struct TmuxXWindowMapping {
         m_inverse_tm_map[location.second] = location.first;
     }
 
-    void remove_window(const TmuxClient &tmux, const Window window) {
+    void remove_window(const TmuxClient &tmux, const Window window, bool kill_pane = true) {
         if (m_inverse_map.count(window)) {
 
             TmuxPaneID tm_pane = m_inverse_map[window];
@@ -215,7 +215,9 @@ struct TmuxXWindowMapping {
             m_inverse_map.erase(window);
             m_inverse_tm_map.erase(tm_pane);
 
-            tmux.kill_pane(tm_pane);
+            if (kill_pane) {
+                tmux.kill_pane(tm_pane);
+            }
         }
     }
 
@@ -259,6 +261,11 @@ struct TmuxXWindowMapping {
         return m_workspaces[location.first][location.second];
     }
 
+    WindowPane &window_for_pane(const TmuxPaneID tm_pane) {
+        TmuxWindowID tm_window = m_inverse_tm_map[tm_pane];
+        return (*this)[{tm_window, tm_pane}];
+    }
+
     void set_active(XState &state, const TmuxLocation location,
                     const bool zoomed = false,
                     const bool redundant_refocus = false) {
@@ -286,6 +293,10 @@ struct TmuxXWindowMapping {
 
     bool has_window(const Window window) const {
         return m_inverse_map.count(window);
+    }
+
+    bool has_pane(const TmuxPaneID tm_pane) const {
+        return m_inverse_tm_map.count(tm_pane);
     }
 
     TmuxLocation find(const Window window) const {

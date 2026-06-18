@@ -276,13 +276,26 @@ void WMInstance::handle_client_msg<MsgType::PREFIX>(const Msg &msg) {
 
 template <>
 void WMInstance::handle_client_msg<MsgType::KILL_PANE>(const Msg &msg) {
-    xwmux::log_debug(std::format("Handling IPC: KILL_PANE pane=%{}\n",
-                                 msg.tm_pane()));
-    if (m_tmux_mapping.is_filled()) {
-        Window w = m_tmux_mapping.current_window();
-        m_tmux_mapping.kill_client(w, m_xstate.display);
-        m_tmux_mapping.remove_window(m_tmux, w);
+    xwmux::log_debug(
+        std::format("Handling IPC: KILL_PANE pane=%{}\n", msg.tm_pane()));
+    Window w{};
+    if (msg.tm_pane() >= 0) {
+        if (!m_tmux_mapping.has_pane(msg.tm_pane())) {
+            xwmux::log_warn(std::format("KILL_PANE: no window for pane: %{}\n",
+                                        msg.tm_pane()));
+            return;
+        }
+        w = m_tmux_mapping.window_for_pane(msg.tm_pane()).get_window();
+    } else {
+        if (!m_tmux_mapping.is_filled()) {
+            xwmux::log_warn(
+                std::format("KILL_PANE: no window for active pane\n"));
+            return;
+        }
+        w = m_tmux_mapping.current_window();
     }
+    m_tmux_mapping.kill_client(w, m_xstate.display);
+    m_tmux_mapping.remove_window(m_tmux, w);
     // Pane should be killed normally on unmap notify.
 }
 
@@ -292,7 +305,7 @@ void WMInstance::handle_client_msg<MsgType::KILL_ORPHANS>(const Msg &msg) {
     xwmux::log_debug("Handling IPC: KILL_ORPHANS\n");
     for (Window w : m_tmux_mapping.find_orphans(m_tmux)) {
         m_tmux_mapping.kill_client(w, m_xstate.display);
-        m_tmux_mapping.remove_window(m_tmux, w);
+        m_tmux_mapping.remove_window(m_tmux, w, false);
     }
 }
 

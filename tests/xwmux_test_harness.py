@@ -10,6 +10,7 @@ observing xwmux state through both tmux and X11-facing tools.
 import json
 import os
 import select
+import signal
 import subprocess
 import sys
 import tempfile
@@ -87,6 +88,7 @@ class XwmuxTestHarness:
             text=True,
             bufsize=1,
             env=launcher_env,
+            start_new_session=True,
         )
 
         startup = self._read_startup_env()
@@ -128,11 +130,18 @@ class XwmuxTestHarness:
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         if self.launcher is not None:
-            self.launcher.terminate()
+            try:
+                os.killpg(self.launcher.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+
             try:
                 self.launcher.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                self.launcher.kill()
+                try:
+                    os.killpg(self.launcher.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
                 self.launcher.wait(timeout=5)
 
         if self.launcher_log_thread is not None:

@@ -27,6 +27,10 @@ XWMUX_CTL = BUILD_DIR / "xwmux-ctl"
 TTY_KEY_LOGGER = ROOT / "tests" / "tty_key_logger.py"
 
 
+class XWindowTreeError(RuntimeError):
+    """Raised when the test harness cannot inspect the X window tree."""
+
+
 class XwmuxTestHarness:
     """Utility object for end-to-end xwmux tests.
 
@@ -65,7 +69,7 @@ class XwmuxTestHarness:
         if not XWMUX_CTL.exists():
             raise RuntimeError(f"missing binary: {XWMUX_CTL}")
 
-        for program in ["xmessage", "xdotool", "tmux", "python3", "xterm"]:
+        for program in ["xmessage", "xdotool", "tmux", "python3", "xterm", "xwininfo"]:
             XwmuxTestHarness.require_program(program)
 
     def start(self):
@@ -314,6 +318,71 @@ class XwmuxTestHarness:
         """Return the currently focused X window id in the nested display."""
         output = subprocess.check_output(["xdotool", "getwindowfocus"], env=self.test_env, text=True)
         return int(output.strip())
+
+    def kill_window(self, window_id):
+        """Ask X to destroy a window by id."""
+        subprocess.check_call(["xdotool", "windowkill", str(window_id)], env=self.test_env)
+
+    def root_child_stack(self):
+        """Return root child windows in bottom-to-top stacking order."""
+        output = subprocess.check_output(
+            ["xwininfo", "-root", "-children"],
+            env=self.test_env,
+            text=True,
+        )
+
+        children = []
+        in_children_section = False
+        for raw_line in output.splitlines():
+            line = raw_line.rstrip()
+            stripped = line.lstrip()
+
+            if stripped.endswith("children:") or stripped.endswith("child windows:"):
+                in_children_section = True
+                continue
+            if not in_children_section:
+                continue
+
+            if not stripped:
+                continue
+            if not stripped.startswith("0x"):
+                continue
+
+            window_id_text = stripped.split()[0]
+            try:
+                children.append(int(window_id_text, 16))
+            except ValueError as err:
+                raise XWindowTreeError(
+                    f"could not parse xwininfo child line: {raw_line!r}"
+                ) from err
+
+        if not children:
+            raise XWindowTreeError(
+                f"xwininfo returned no root children; output was:\n{output}"
+            )
+
+        # Lines are read top (highest in stack) to bottom (lowest in stack) of
+        # output, so need reverse
+        children.reverse()
+        return children
+
+    def stack_index(self, window_id):
+        """Return the root-child stack index for a window, bottom-most first."""
+        stack = self.root_child_stack()
+        try:
+            return stack.index(window_id)
+        except ValueError as err:
+            raise AssertionError(
+                f"window {window_id} not present in root child stack {stack}"
+            ) from err
+
+    def is_below(self, lower_window_id, upper_window_id):
+        """True when ``lower_window_id`` is below ``upper_window_id``."""
+        try:
+            return self.stack_index(lower_window_id) < self.stack_index(upper_window_id)
+        except AssertionError as err:
+            # If not found
+            return False
 
     def window_size(self, window_id):
         """Return ``(width, height)`` for an X window in the nested display."""

@@ -43,6 +43,7 @@
             pkgs.st
             pkgs.xterm
             pkgs.xdotool
+            pkgs.xwininfo
             pkgs.xorg.xmessage
             pkgs.xorg.xorgserver
           ];

@@ -36,7 +36,12 @@
             pkgs.libx11
             pkgs.cmake
             pkgs.clang
-            pkgs.python3
+            (pkgs.python3.withPackages (ps:
+              with ps; [
+                flake8
+                black
+              ]))
+            pkgs.pyright
             pkgs.tmux
             pkgs.kitty
             pkgs.alacritty

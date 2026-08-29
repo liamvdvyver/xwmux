@@ -48,12 +48,6 @@ if ! command -v tmux >/dev/null 2>&1; then
     exit 1
 fi
 
-HOST_DISPLAY=${DISPLAY:-}
-if [ -z "$HOST_DISPLAY" ]; then
-    echo "DISPLAY is not set; Xephyr needs a host X display" >&2
-    exit 1
-fi
-
 find_free_display() {
     display_num=100
     while [ -e "/tmp/.X11-unix/X${display_num}" ]; do
@@ -61,6 +55,32 @@ find_free_display() {
     done
     echo ":${display_num}"
 }
+
+HOST_DISPLAY=${DISPLAY:-}
+STARTED_XVFB=0
+if [ -z "$HOST_DISPLAY" ]; then
+    if ! command -v Xvfb >/dev/null 2>&1; then
+        echo "DISPLAY is not set and Xvfb not found in PATH" >&2
+        exit 1
+    fi
+
+    HOST_DISPLAY=$(find_free_display)
+    Xvfb "$HOST_DISPLAY" -screen 0 1280x800x24 -ac &
+    XVFB_PID=$!
+    STARTED_XVFB=1
+
+    for _ in $(seq 1 50); do
+        if [ -e "/tmp/.X11-unix/X${HOST_DISPLAY#:}" ]; then
+            break
+        fi
+        sleep 0.1
+    done
+
+    if [ ! -e "/tmp/.X11-unix/X${HOST_DISPLAY#:}" ]; then
+        echo "Xvfb did not start on $HOST_DISPLAY" >&2
+        exit 1
+    fi
+fi
 
 RUNTIME_DIR=$(mktemp -d "${TMPDIR:-/tmp}/xwmux-xephyr.XXXXXX")
 export XWMUX_TMUX_SOCKET="$RUNTIME_DIR/tmux.sock"
@@ -78,6 +98,10 @@ cleanup() {
     if [ -n "${XEPHYR_PID:-}" ]; then
         kill "$XEPHYR_PID" 2>/dev/null || true
         wait "$XEPHYR_PID" 2>/dev/null || true
+    fi
+    if [ -n "${XVFB_PID:-}" ]; then
+        kill "$XVFB_PID" 2>/dev/null || true
+        wait "$XVFB_PID" 2>/dev/null || true
     fi
     rm -rf "$RUNTIME_DIR"
 }
@@ -108,6 +132,7 @@ echo "  HOST_DISPLAY=$HOST_DISPLAY"
 echo "  DISPLAY=$DISPLAY"
 echo "  XWMUX_TMUX_SOCKET=$XWMUX_TMUX_SOCKET"
 echo "  TMUX_CONF=$TMUX_CONF"
+echo "  STARTED_XVFB=$STARTED_XVFB"
 if [ -n "${XWMUX_TERMINAL:-}" ]; then
     echo "  XWMUX_TERMINAL=$XWMUX_TERMINAL"
 fi

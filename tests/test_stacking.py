@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import sys
-import time
 import unittest
 
 from xwmux_test_harness import XwmuxTestHarness
@@ -18,7 +17,7 @@ class StackingIntegrationTest(unittest.TestCase):
     def setUp(self):
         self.harness = XwmuxTestHarness()
         self.harness.start()
-        time.sleep(1.5)
+        self.harness.wait_until_ready()
 
     def tearDown(self):
         self.harness.stop()
@@ -31,9 +30,12 @@ class StackingIntegrationTest(unittest.TestCase):
 
         self.harness.kill_window(term_window)
 
-        time.sleep(0.5)
-
-        reopened_term = self.harness.root_terminal_window_id()
+        reopened_term = self.harness.wait_for(
+            lambda: self.harness.focused_window_id()
+            if self.harness.focused_window_id() == self.harness.root_terminal_window_id()
+            else None,
+            message="root terminal did not regain focus after being killed",
+        )
 
         self.harness.wait_for(
             lambda: self.harness.is_below(reopened_term, gui_pane["x_window"]),

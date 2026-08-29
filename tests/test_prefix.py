@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import sys
-import time
 import unittest
 
 from xwmux_test_harness import XwmuxTestHarness
@@ -17,9 +16,8 @@ class PrefixIntegrationTest(unittest.TestCase):
         )
 
         gui_pane = self.harness.get_gui_panes(state)[0]
-        self.harness.wait_for_state(
-            lambda s: s.get("active")
-            == {"window": gui_pane["window"], "pane": gui_pane["pane"]},
+        gui_pane = self.harness.wait_for(
+            lambda: self.harness.active_gui_pane(self.harness.dump_state()),
             message="GUI key logger window wasn't focused after launching",
         )
         self.harness.wait_for(
@@ -39,11 +37,7 @@ class PrefixIntegrationTest(unittest.TestCase):
     def setUp(self):
         self.harness = XwmuxTestHarness()
         self.harness.start()
-
-        # TODO: allow probing for initialisation
-        # Or make starting apps before init not cause problems
-
-        time.sleep(1.5)
+        self.harness.wait_until_ready()
 
     def tearDown(self):
         self.harness.stop()
@@ -53,8 +47,6 @@ class PrefixIntegrationTest(unittest.TestCase):
         # XTEST instead of synthetic XSendEvent key events.
         gui_pane, log_path = self._launch_key_logger_and_wait_for_gui_pane()
         terminal_window_id = self.harness.root_terminal_window_id()
-
-        time.sleep(0.5)
 
         self.harness.send_key("ctrl+b")
 
@@ -97,7 +89,10 @@ class PrefixIntegrationTest(unittest.TestCase):
         gui_pane = self.harness.launch_and_wait_for_gui_pane(title="xwmux-prefix-z-test")
         terminal_window_id = self.harness.root_terminal_window_id()
         self.harness.tmux("split-window", "-h", "-d")
-        time.sleep(0.5)
+        self.harness.wait_for(
+            lambda: p if len(p := self.harness.list_panes()) >= 3 else None,
+            message="tmux never showed three panes after splitting before prefix z",
+        )
 
         initial_size = self.harness.window_size(gui_pane["x_window"])
 
@@ -114,9 +109,12 @@ class PrefixIntegrationTest(unittest.TestCase):
 
         self.harness.send_key("z")
 
-        self.harness.wait_for_state(
-            lambda s: s.get("active")
-            == {"window": gui_pane["window"], "pane": gui_pane["pane"]},
+        self.harness.wait_for(
+            lambda: (
+                active if (active := self.harness.active_gui_pane(self.harness.dump_state()))
+                and active["x_window"] == gui_pane["x_window"]
+                else None
+            ),
             message="prefix z changed the active pane",
         )
         zoomed_size = self.harness.wait_for(
@@ -138,8 +136,10 @@ class PrefixIntegrationTest(unittest.TestCase):
         gui_pane = self.harness.launch_and_wait_for_gui_pane(title="xwmux-prefix-bang-test")
         terminal_window_id = self.harness.root_terminal_window_id()
         self.harness.tmux("split-window", "-h", "-d")
-
-        time.sleep(0.5)
+        self.harness.wait_for(
+            lambda: p if len(p := self.harness.list_panes()) >= 3 else None,
+            message="tmux never showed three panes after splitting before prefix bang",
+        )
 
         self.harness.send_key("ctrl+b")
 

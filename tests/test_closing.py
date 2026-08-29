@@ -2,7 +2,6 @@
 
 import subprocess
 import sys
-import time
 import unittest
 
 from xwmux_test_harness import XWMUX_CTL, XwmuxTestHarness
@@ -19,8 +18,7 @@ class ClosingIntegrationTest(unittest.TestCase):
     def setUp(self):
         self.harness = XwmuxTestHarness()
         self.harness.start()
-
-        time.sleep(1.5)
+        self.harness.wait_until_ready()
 
     def tearDown(self):
         self.harness.stop()

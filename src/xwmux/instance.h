@@ -121,7 +121,41 @@ class WMInstance {
     }
 
     void write_state_json() {
-        const std::string json = m_tmux_mapping.to_json();
+        std::string json = m_tmux_mapping.to_json();
+        if (!json.empty() && json.back() == '}') {
+            json.pop_back();
+        }
+
+        json += std::format(
+            ",\"layout_initialized\":{}",
+            m_layout_initialized ? "true" : "false");
+        json += std::format(
+            ",\"root_terminal_window\":{}",
+            m_xstate.term.has_value()
+                ? std::to_string(static_cast<unsigned long>(m_xstate.term.value()))
+                : std::string("null"));
+        json += std::format(
+            ",\"pending_window_count\":{}",
+            m_pending_windows.size());
+
+        json += ",\"pending_windows\":[";
+        bool first_pending = true;
+        for (const Window window : m_pending_windows) {
+            if (!first_pending) {
+                json += ",";
+            }
+            first_pending = false;
+            json += std::to_string(static_cast<unsigned long>(window));
+        }
+        json += "]";
+
+        json += std::format(
+            ",\"prefix\":{{\"initialized\":{},\"grabbed\":{},\"keycode\":{},\"modifiers\":{}}}",
+            m_xstate.prefix_initialized ? "true" : "false",
+            m_xstate.grabbed ? "true" : "false", m_xstate.prefix.keycode,
+            m_xstate.prefix.modifiers);
+        json += "}";
+
         XChangeProperty(m_xstate.display, m_xstate.root,
                         state_json_atom(m_xstate.display), XA_STRING, 8,
                         PropModeReplace,

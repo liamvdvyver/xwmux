@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import sys
-import time
 import unittest
 
 from xwmux_test_harness import XwmuxTestHarness
@@ -18,8 +17,7 @@ class FocusIntegrationTest(unittest.TestCase):
     def setUp(self):
         self.harness = XwmuxTestHarness()
         self.harness.start()
-
-        time.sleep(1.5)
+        self.harness.wait_until_ready()
 
     def tearDown(self):
         self.harness.stop()
@@ -33,6 +31,10 @@ class FocusIntegrationTest(unittest.TestCase):
             message="tmux never showed three panes after splitting",
         )
 
+        gui_pane = self.harness.wait_for_gui_pane(
+            x_window=gui_pane["x_window"],
+            message="GUI pane mapping changed before split handling settled",
+        )
         terminal_pane = next(
             pane
             for pane in panes
@@ -77,10 +79,17 @@ class FocusIntegrationTest(unittest.TestCase):
             message="switching to another tmux window did not focus the terminal",
         )
 
+        gui_pane = self.harness.wait_for_gui_pane(
+            x_window=gui_pane["x_window"],
+            message="GUI pane mapping disappeared before switching back",
+        )
         self.harness.select_window(gui_pane["window"])
-        self.harness.wait_for_state(
-            lambda s: s.get("active")
-            == {"window": gui_pane["window"], "pane": gui_pane["pane"]},
+        self.harness.wait_for(
+            lambda: (
+                active if (active := self.harness.active_gui_pane(self.harness.dump_state()))
+                and active["x_window"] == gui_pane["x_window"]
+                else None
+            ),
             message="switching back did not restore the GUI pane as active",
         )
         self.harness.wait_for(

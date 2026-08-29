@@ -42,6 +42,8 @@ instead of the default tmux server.
 
 Use the `xwmux-ctl` program to control xwmux.
 
+Run `xwmux-ctl --help` to see all commands.
+
 The following commands are supported (for the end user):
 * `xwmux-ctl exit`: exit the session.
 * `xwmux-ctl dump-state`: print the current tmux/X window mapping state as JSON.

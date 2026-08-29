@@ -15,17 +15,21 @@ struct Command {
   public:
     virtual std::string keyword() const = 0;
     virtual std::string usage_suffix() const = 0;
+    virtual std::string description() const = 0;
 
     virtual std::optional<Msg> parse(int argc, char **argv, int cur,
                                      Display *dpy) = 0;
 
     virtual ~Command() {}
 
+    std::string usage() const {
+        return "xwmux-ctl " + keyword() + usage_suffix();
+    }
+
     virtual std::optional<Msg> operator()(int argc, char **argv, Display *dpy) {
         std::optional<Msg> ret = parse(argc, argv, 0, dpy);
         if (!ret.has_value()) {
-            std::cerr << "Usage: xwmux-ctl " << keyword() << usage_suffix()
-                      << std::endl;
+            std::cerr << "Usage: " << usage() << std::endl;
         }
 
         return ret;
@@ -38,6 +42,9 @@ struct InitLayout : Command {
     std::string keyword() const override { return "init"; }
     std::string usage_suffix() const override {
         return " <rows> <cols> <px_w> <px_h> <bar-position>";
+    }
+    std::string description() const override {
+        return "Report terminal geometry and tmux bar position to xwmux.";
     }
     std::optional<Msg> parse(int argc, char **argv, int cur,
                              Display *dpy) override {
@@ -69,6 +76,9 @@ struct InitLayout : Command {
 struct InitPrefix : Command {
     std::string keyword() const override { return "prefix"; }
     std::string usage_suffix() const override { return " <prefix>"; }
+    std::string description() const override {
+        return "Report the current tmux prefix key to xwmux.";
+    }
     std::optional<Msg> parse(int argc, char **argv, int cur,
                              Display *dpy) override {
         if (cur + 1 != argc - 1) {
@@ -82,6 +92,9 @@ struct InitPrefix : Command {
 struct Exit : Command {
     std::string keyword() const override { return "exit"; }
     std::string usage_suffix() const override { return ""; }
+    std::string description() const override {
+        return "Ask the running xwmux session to exit.";
+    }
     std::optional<Msg> parse(int argc, char **argv, int cur,
                              Display *dpy) override {
         (void)argc;
@@ -94,6 +107,9 @@ struct Exit : Command {
 struct DumpState : Command {
     std::string keyword() const override { return "dump-state"; }
     std::string usage_suffix() const override { return ""; }
+    std::string description() const override {
+        return "Print the current tmux/X window mapping state as JSON.";
+    }
     std::optional<Msg> parse(int argc, char **argv, int cur,
                              Display *dpy) override {
         (void)argc;
@@ -122,6 +138,9 @@ struct KillPane : Command {
     std::string usage_suffix() const override {
         return " [ %<pane-id> | focused | orphans ]";
     }
+    std::string description() const override {
+        return "Kill a tmux pane, the focused pane, or orphaned panes.";
+    }
     std::optional<Msg> parse(int argc, char **argv, int cur,
                              Display *dpy) override {
         if (cur + 1 != argc - 1) {
@@ -149,6 +168,9 @@ struct NotifyTmuxPosition : Command {
         return " focused zoomed $<session-id> @<window-id> %<pane-id> "
                "pane_left "
                "pane_top pane_width pane_height dead";
+    }
+    std::string description() const override {
+        return "Internal hook: report a tmux pane's current position to xwmux.";
     }
     std::optional<Msg> parse(int argc, char **argv, int cur,
                              Display *dpy) override {
@@ -229,23 +251,52 @@ std::unique_ptr<Command> parse_cmd(std::string cmd) {
     return nullptr;
 }
 
+void print_general_help(std::ostream &out) {
+    out << "Usage: xwmux-ctl <command> [args]\n\n";
+    out << "Commands:\n";
+
+    const Command *commands[] = {
+        new Exit(), new DumpState(), new KillPane(), new InitLayout(),
+        new InitPrefix(), new NotifyTmuxPosition(),
+    };
+
+    for (const Command *cmd : commands) {
+        out << "  " << cmd->usage() << "\n";
+        delete cmd;
+    }
+}
+
+bool is_help_flag(const std::string &arg) {
+    return arg == "--help" || arg == "-h";
+}
+
 int main(int argc, char **argv) {
 
-    static std::string usage = "Usage: xwmux-ctl <cmd>";
-
     if (argc < 2) {
-        std::cerr << usage << std::endl;
+        print_general_help(std::cerr);
         return EXIT_FAILURE;
     }
 
     std::string cmd_str = argv[1];
+    if (is_help_flag(cmd_str)) {
+        print_general_help(std::cout);
+        return EXIT_SUCCESS;
+    }
+
     const bool wants_state_dump = cmd_str == "dump-state";
 
     std::unique_ptr<Command> cmd = parse_cmd(cmd_str);
     if (!cmd) {
-        std::cerr << usage << std::endl;
+        std::cerr << "Unknown command: " << cmd_str << "\n\n";
+        print_general_help(std::cerr);
         return EXIT_FAILURE;
     }
+
+    if (argc >= 3 && is_help_flag(argv[2])) {
+        std::cout << "Usage: " << cmd->usage() << std::endl;
+        return EXIT_SUCCESS;
+    }
+
     Display *dpy = XOpenDisplay(nullptr);
     std::optional<Msg> opt_msg = (*cmd.get())(argc - 1, argv + 1, dpy);
 

@@ -27,6 +27,10 @@ file(GLOB SCRIPTS
 add_executable(xwmux ${SOURCES})
 add_executable(xwmux-ctl xwmux-utils/xwmux-ctl.cpp)
 
+set_target_properties(xwmux xwmux-ctl PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+)
+
 install(TARGETS xwmux xwmux-ctl)
 install(PROGRAMS ${SCRIPTS} TYPE BIN)
 

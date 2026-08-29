@@ -53,7 +53,12 @@ struct InitLayout : Command {
         TmuxBarPosition pos = TmuxBarPosition::BOTTOM;
         if (!std::strcmp("top", argv[cur + 5])) {
             pos = TmuxBarPosition::TOP;
-        } else if (std::strcmp("bottom", argv[cur + 5])) {
+        } else if (!std::strcmp("bottom", argv[cur + 5])) {
+            pos = TmuxBarPosition::BOTTOM;
+        } else if (!std::strcmp("off", argv[cur + 5]) ||
+                   !std::strcmp("none", argv[cur + 5])) {
+            pos = TmuxBarPosition::NONE;
+        } else {
             std::cerr << "bad bar position\n";
         }
 

@@ -68,6 +68,7 @@ xwmux reads the following tmux options from the connected tmux server:
 
 * `prefix`: used to determine which key should be intercepted and forwarded to
   tmux.
+* `status`: used to detect whether the tmux status bar is enabled.
 * `status-position`: used to compute layout correctly when the tmux status bar
   is at the top or bottom.
 

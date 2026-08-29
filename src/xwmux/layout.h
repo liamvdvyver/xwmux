@@ -65,9 +65,10 @@ struct Resolution : public Point {
     }
 };
 
-enum class TmuxBarPosition : bool {
+enum class TmuxBarPosition : uint8_t {
     BOTTOM,
     TOP,
+    NONE,
 };
 
 enum class PaddingDistribution : uint8_t {
@@ -118,6 +119,10 @@ struct WindowLayouts {
             break;
         case TmuxBarPosition::TOP:
             start_px = {0, 1};
+            end_px = {m_term_resolution.x, m_term_resolution.y};
+            break;
+        case TmuxBarPosition::NONE:
+            start_px = {0, 0};
             end_px = {m_term_resolution.x, m_term_resolution.y};
             break;
         }

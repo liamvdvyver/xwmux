@@ -62,10 +62,15 @@ if ! tmux_cmd list-sessions >/dev/null 2>&1; then
     tmux_cmd new-session -d -s "$session_name"
 fi
 
-status_position=$(tmux_cmd show-options -g status-position | cut -f 2 -d ' ')
+status=$(tmux_cmd show-options -g status | cut -f 2 -d ' ')
+if [ "$status" = "off" ]; then
+    bar_position=off
+else
+    bar_position=$(tmux_cmd show-options -g status-position | cut -f 2 -d ' ')
+fi
 prefix=$(tmux_cmd show-options -g prefix | cut -f 2 -d ' ')
 
-xwmux-ctl init "$rows" "$cols" "$pixel_width" "$pixel_height" "$status_position"
+xwmux-ctl init "$rows" "$cols" "$pixel_width" "$pixel_height" "$bar_position"
 xwmux-ctl prefix "$prefix"
 
 tmux_cmd new-session -A -s "$session_name"

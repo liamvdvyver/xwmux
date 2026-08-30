@@ -21,8 +21,35 @@
           name = "xwmux";
           src = ./src;
           buildInputs = [pkgs.libx11];
-          nativeBuildInputs = [pkgs.cmake];
-          propagatedBuildInputs = [pkgs.python3];
+          nativeBuildInputs = [pkgs.cmake pkgs.makeWrapper];
+          postInstall = ''
+            for script in \
+              $out/bin/xwmux-init-term.sh \
+              $out/bin/xwmux-launch-term.sh \
+              $out/bin/xwmux-report.sh \
+              $out/bin/xwmux-tmux-conf.sh \
+              $out/bin/xwmux-xephyr-test.sh
+            do
+              wrapProgram "$script" \
+                --prefix PATH : ${pkgs.lib.makeBinPath [
+                  pkgs.python3
+                  pkgs.tmux
+                  pkgs.coreutils
+                  pkgs.findutils
+                  pkgs.gnugrep
+                  pkgs.gnused
+                  pkgs.gawk
+                  pkgs.xdotool
+                  pkgs.xwininfo
+                  pkgs.xorg.xmessage
+                  pkgs.xorg.xorgserver
+                  pkgs.kitty
+                  pkgs.alacritty
+                  pkgs.st
+                  pkgs.xterm
+                ]}
+            done
+          '';
         };
       }
     );

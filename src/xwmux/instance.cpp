@@ -445,11 +445,22 @@ bool WMInstance::is_same_active_location(const TmuxPaneSnapshot &pane) const {
            m_tmux_mapping.get_active().value() == pane.location;
 }
 
+bool WMInstance::pane_has_gui_window(const TmuxPaneSnapshot &pane) const {
+    return m_tmux_mapping.is_filled(pane.location);
+}
+
 bool WMInstance::needs_redundant_refocus(
     const TmuxPaneSnapshot &pane, const bool same_active_location) const {
     return (pane.zoomed && same_active_location &&
-            m_tmux_mapping.is_filled(pane.location)) ||
+            pane_has_gui_window(pane)) ||
            (m_force_active_refocus && same_active_location);
+}
+
+void WMInstance::maybe_clear_forced_refocus(const TmuxPaneSnapshot &pane,
+                                            const bool same_active_location) {
+    if (same_active_location || m_tmux_mapping.get_active().value() == pane.location) {
+        m_force_active_refocus = false;
+    }
 }
 
 void WMInstance::apply_active_pane_with_focus(const TmuxPaneSnapshot &pane,
@@ -493,9 +504,7 @@ void WMInstance::update_active_focus_from_pane(const TmuxPaneSnapshot &pane) {
     }
 
     apply_active_pane_with_focus(pane, redundant_refocus);
-    if (same_active_location || m_tmux_mapping.get_active().value() == pane.location) {
-        m_force_active_refocus = false;
-    }
+    maybe_clear_forced_refocus(pane, same_active_location);
 }
 
 std::optional<WindowPosition>

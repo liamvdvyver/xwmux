@@ -211,6 +211,12 @@ class WMInstance {
     void refresh_from_tmux_snapshot();
     void apply_snapshot_panes(const TmuxSnapshot &snapshot);
     void remove_orphaned_windows(const TmuxSnapshot &snapshot);
+    bool is_same_active_location(const TmuxPaneSnapshot &pane) const;
+    bool needs_redundant_refocus(const TmuxPaneSnapshot &pane,
+                                 bool same_active_location) const;
+    void update_overridden_active_focus(const TmuxPaneSnapshot &pane,
+                                        bool same_active_location,
+                                        bool redundant_refocus);
     void maybe_attach_pending_window(const TmuxPaneSnapshot &pane);
     void update_active_focus_from_pane(const TmuxPaneSnapshot &pane);
     void apply_pane_geometry(const TmuxPaneSnapshot &pane);

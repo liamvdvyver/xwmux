@@ -489,20 +489,30 @@ void WMInstance::update_active_focus_from_pane(const TmuxPaneSnapshot &pane) {
     }
 }
 
-void WMInstance::apply_pane_geometry(const TmuxPaneSnapshot &pane) {
+std::optional<WindowPosition>
+WMInstance::desired_gui_position(const TmuxPaneSnapshot &pane) const {
     if (!m_layout_initialized) {
         xwmux::log_warn(std::format(
             "Skipping pane geometry update before layout initialization for target=(@{}, %{})\n",
             pane.location.first, pane.location.second));
+        return std::nullopt;
+    }
+
+    if (!m_tmux_mapping.is_filled(pane.location)) {
+        return std::nullopt;
+    }
+
+    return m_xstate.term_layout.term_to_screen_pos(
+        m_xstate.term_layout.add_bar(pane.position));
+}
+
+void WMInstance::apply_pane_geometry(const TmuxPaneSnapshot &pane) {
+    const std::optional<WindowPosition> gui_position = desired_gui_position(pane);
+    if (!gui_position.has_value()) {
         return;
     }
 
-    WindowPosition gui_position = m_xstate.term_layout.term_to_screen_pos(
-        m_xstate.term_layout.add_bar(pane.position));
-
-    if (m_tmux_mapping.is_filled(pane.location)) {
-        m_tmux_mapping[pane.location].set_position(m_xstate, gui_position);
-    }
+    m_tmux_mapping[pane.location].set_position(m_xstate, gui_position.value());
 }
 
 void WMInstance::apply_tmux_pane_snapshot(const TmuxPaneSnapshot &pane) {

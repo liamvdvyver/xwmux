@@ -50,9 +50,6 @@ std::string msg_type_name(Display *display, const Atom atom) {
     if (atom == msg_type_atom(display, MsgType::REFRESH)) {
         return "REFRESH";
     }
-    if (atom == msg_type_atom(display, MsgType::TMUX_POSITION)) {
-        return "TMUX_POSITION";
-    }
     if (atom == msg_type_atom(display, MsgType::KILL_PANE)) {
         return "KILL_PANE";
     }
@@ -68,13 +65,6 @@ std::string msg_type_name(Display *display, const Atom atom) {
 std::string msg_summary(Display *display, const Msg &msg,
                         const XClientMessageEvent &ev) {
     const std::string type = msg_type_name(display, ev.message_type);
-    if (ev.message_type == msg_type_atom(display, MsgType::TMUX_POSITION)) {
-        const WindowPosition pos = msg.window_position();
-        return std::format(
-            "{} window=@{} pane=%{} focused={} zoomed={} dead={} pos=({},{})->({},{})",
-            type, msg.tm_window(), msg.tm_pane(), msg.focused(), msg.zoomed(),
-            msg.dead(), pos.start.x, pos.start.y, pos.end.x, pos.end.y);
-    }
     if (ev.message_type == msg_type_atom(display, MsgType::RESOLUTION)) {
         const Resolution chars = msg.res_chars();
         const Resolution px = msg.res_px();
@@ -89,16 +79,6 @@ std::string msg_summary(Display *display, const Msg &msg,
         return std::format("{} pane=%{}", type, msg.tm_pane());
     }
     return type;
-}
-
-TmuxPaneSnapshot snapshot_pane_from_msg(const Msg &msg) {
-    return {
-        .location = msg.tm_location(),
-        .position = msg.window_position(),
-        .focused = msg.focused(),
-        .zoomed = msg.zoomed(),
-        .dead = msg.dead(),
-    };
 }
 
 } // namespace
@@ -509,11 +489,6 @@ void WMInstance::apply_tmux_pane_snapshot(const TmuxPaneSnapshot &pane) {
 }
 
 template <>
-void WMInstance::handle_client_msg<MsgType::TMUX_POSITION>(const Msg &msg) {
-    apply_tmux_pane_snapshot(snapshot_pane_from_msg(msg));
-}
-
-template <>
 void WMInstance::handle_x_event<ClientMessage>(XClientMessageEvent &ev) {
     const Msg msg{ev};
     xwmux::log_debug(std::format("Handling X event: {} {}\n",
@@ -537,9 +512,6 @@ void WMInstance::handle_x_event<ClientMessage>(XClientMessageEvent &ev) {
     } else if (ev.message_type ==
                msg_type_atom(m_xstate.display, MsgType::KILL_ORPHANS)) {
         handle_client_msg<MsgType::KILL_ORPHANS>(msg);
-    } else if (ev.message_type ==
-               msg_type_atom(m_xstate.display, MsgType::TMUX_POSITION)) {
-        handle_client_msg<MsgType::TMUX_POSITION>(msg);
     } else if (ev.message_type ==
                msg_type_atom(m_xstate.display, MsgType::DUMP_STATE)) {
         handle_client_msg<MsgType::DUMP_STATE>(msg);

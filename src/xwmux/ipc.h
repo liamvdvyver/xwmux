@@ -22,7 +22,6 @@ enum class MsgType {
     PREFIX,
     EXIT,
     REFRESH,
-    TMUX_POSITION,
     KILL_PANE,
     KILL_ORPHANS,
     DUMP_STATE
@@ -38,8 +37,6 @@ constexpr Atom msg_type_atom(Display *dpy, const MsgType type) {
         return XInternAtom(dpy, "_XW_EXIT", 0);
     case MsgType::REFRESH:
         return XInternAtom(dpy, "_XW_REFRESH", 0);
-    case MsgType::TMUX_POSITION:
-        return XInternAtom(dpy, "_XW_TMUX_POSITION", 0);
     case MsgType::KILL_PANE:
         return XInternAtom(dpy, "_XW_KILL_PANE", 0);
     case MsgType::KILL_ORPHANS:
@@ -74,20 +71,6 @@ struct Msg {
         Msg ret(dpy, MsgType::PREFIX);
         ret.keycode() = prefix.keycode;
         ret.mods() = prefix.modifiers;
-        return ret;
-    }
-
-    constexpr static Msg report_position(Display *const dpy,
-                                         const TmuxLocation location,
-                                         const WindowPosition position,
-                                         const bool focused, const bool zoomed,
-                                         const bool dead) {
-        Msg ret(dpy, MsgType::TMUX_POSITION);
-        ret.position_start() = position.start.pack();
-        ret.position_end() = position.end.pack();
-        ret.tm_window() = location.first;
-        ret.tm_pane() = location.second;
-        ret.bitflags() = (focused | (zoomed << 1) | (dead << 2));
         return ret;
     }
 

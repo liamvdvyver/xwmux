@@ -405,39 +405,39 @@ void WMInstance::handle_client_msg<MsgType::DUMP_STATE>(const Msg &msg) {
 }
 
 void WMInstance::maybe_attach_pending_window(const TmuxPaneSnapshot &pane) {
-    if (!m_window_q.empty() && !m_tmux_mapping.is_filled(pane.location) &&
-        pane.dead) {
-
-        xwmux::log_debug(std::format(
-            "Refresh attaching_pending_window layout_initialized={} pending_queue_size={} target=(@{}, %{})\n",
-            m_layout_initialized, m_window_q.size(), pane.location.first,
-            pane.location.second));
-
-        Window window = m_window_q.front();
-        m_window_q.pop();
-
-        // Already destroyed or window already mapped, so kill the pane
-        // TODO: avoid WMInstance::adding to queue twice instead?
-        if (!m_pending_windows.count(window) || m_tmux_mapping.has_window(window)) {
-            m_tmux.kill_pane(pane.location.second);
-
-        } else {
-            xwmux::log_debug(std::format(
-                "Refresh add_window window={} target=(@{}, %{})\n",
-                static_cast<unsigned long>(window), pane.location.first,
-                pane.location.second));
-            if (!m_layout_initialized) {
-                xwmux::log_warn(std::format(
-                    "Deferring initial GUI geometry until layout initialization for window={} target=(@{}, %{})\n",
-                    static_cast<unsigned long>(window), pane.location.first,
-                    pane.location.second));
-            }
-            m_tmux_mapping.add_window(m_xstate, window, pane.location,
-                                      m_layout_initialized);
-            m_pending_windows.erase(window);
-            name_client(window, pane.location.second);
-        }
+    if (!should_attach_pending_window(pane)) {
+        return;
     }
+
+    xwmux::log_debug(std::format(
+        "Refresh attaching_pending_window layout_initialized={} pending_queue_size={} target=(@{}, %{})\n",
+        m_layout_initialized, m_window_q.size(), pane.location.first,
+        pane.location.second));
+
+    Window window = m_window_q.front();
+    m_window_q.pop();
+
+    // Already destroyed or window already mapped, so kill the pane
+    // TODO: avoid WMInstance::adding to queue twice instead?
+    if (!m_pending_windows.count(window) || m_tmux_mapping.has_window(window)) {
+        m_tmux.kill_pane(pane.location.second);
+        return;
+    }
+
+    xwmux::log_debug(std::format(
+        "Refresh add_window window={} target=(@{}, %{})\n",
+        static_cast<unsigned long>(window), pane.location.first,
+        pane.location.second));
+    if (!m_layout_initialized) {
+        xwmux::log_warn(std::format(
+            "Deferring initial GUI geometry until layout initialization for window={} target=(@{}, %{})\n",
+            static_cast<unsigned long>(window), pane.location.first,
+            pane.location.second));
+    }
+    m_tmux_mapping.add_window(m_xstate, window, pane.location,
+                              m_layout_initialized);
+    m_pending_windows.erase(window);
+    name_client(window, pane.location.second);
 }
 
 bool WMInstance::is_same_active_location(const TmuxPaneSnapshot &pane) const {
@@ -447,6 +447,11 @@ bool WMInstance::is_same_active_location(const TmuxPaneSnapshot &pane) const {
 
 bool WMInstance::pane_has_gui_window(const TmuxPaneSnapshot &pane) const {
     return m_tmux_mapping.is_filled(pane.location);
+}
+
+bool WMInstance::should_attach_pending_window(
+    const TmuxPaneSnapshot &pane) const {
+    return !m_window_q.empty() && !pane_has_gui_window(pane) && pane.dead;
 }
 
 bool WMInstance::needs_redundant_refocus(

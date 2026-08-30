@@ -213,6 +213,7 @@ class WMInstance {
     void remove_orphaned_windows(const TmuxSnapshot &snapshot);
     bool is_same_active_location(const TmuxPaneSnapshot &pane) const;
     bool pane_has_gui_window(const TmuxPaneSnapshot &pane) const;
+    bool should_attach_pending_window(const TmuxPaneSnapshot &pane) const;
     bool needs_redundant_refocus(const TmuxPaneSnapshot &pane,
                                  bool same_active_location) const;
     void maybe_clear_forced_refocus(const TmuxPaneSnapshot &pane,

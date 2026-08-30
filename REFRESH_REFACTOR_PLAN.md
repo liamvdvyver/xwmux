@@ -572,6 +572,64 @@ For ad hoc investigation, use the existing harness in `tests/xwmux_test_harness.
 
 ---
 
+## Progress status (updated)
+
+### Completed
+- Added `TmuxSnapshot` / `TmuxPaneSnapshot` in C++.
+- Added `TmuxClient::snapshot()` and snapshot capture helpers.
+- Added `REFRESH` IPC and `xwmux-ctl refresh`.
+- Simplified `src/scripts/xwmux-report.sh` to send only `refresh`.
+- Added single-threaded adjacent refresh coalescing in the WM event loop.
+- Added `refresh_from_tmux_snapshot()` as the runtime entry point for tmux-derived reconciliation.
+- Removed the old external `tmux-position` command path from `xwmux-ctl`.
+- Removed `TMUX_POSITION` from live IPC dispatch; the WM no longer accepts pane-by-pane tmux position messages from hooks.
+- Moved refresh-driven pane application to internal `TmuxPaneSnapshot` handling.
+- Clarified refresh into explicit internal phases/helpers in `WMInstance`:
+  - `remove_orphaned_windows(...)`
+  - `apply_snapshot_panes(...)`
+  - `maybe_attach_pending_window(...)`
+  - `update_active_focus_from_pane(...)`
+  - `apply_pane_geometry(...)`
+- Separated part of refresh decision logic from side effects with helper extractions for:
+  - active-location comparison
+  - redundant-refocus decisions
+  - geometry computation vs geometry application
+  - active-pane application with/without focus
+  - forced-refocus clearing policy
+- Fixed a real snapshot bug across tmux session switches by using the attached client’s actual active `window_id` / `pane_id` instead of inferring focus from `list-panes -a`.
+- Added a headless regression test covering switching back to the original session and restoring the correct GUI focus/visibility.
+- Headless integration suite passes after these changes.
+
+### In progress / partially complete
+- `refresh_from_tmux_snapshot()` is now the runtime source of tmux-derived updates, but it is still structurally close to the old per-pane logic.
+- Pending GUI attachment happens during refresh, but it still follows the old focused/dead-pane semantics rather than a fully explicit deterministic attach phase.
+- `WMInstance` has improved structure, but responsibility is still too centralized.
+- `TmuxXWindowMapping` still mixes model state with X11 visibility/focus side effects.
+
+### Not started yet
+- Sync / sequence numbers in the IPC protocol.
+- Test-harness explicit sync helpers.
+- Deeper ownership cleanup of `TmuxXWindowMapping` and focus/visibility policy.
+- A broader explicit attachment phase that preserves current prefix/focus semantics.
+
+### Important note
+A previous attempt to move pending-window attachment into a separate broader refresh pre-pass changed behavior and broke prefix-related tests. That change was reverted. Future attachment-phase cleanup should proceed carefully and preserve current prefix/focus semantics.
+
+## Suggested next step
+
+The safest next step remains a **behavior-preserving internal refactor of the refresh path**, not a semantic change.
+
+Recommended target:
+- keep making `refresh_from_tmux_snapshot()` read as phased reconciliation
+- avoid changing attachment policy yet
+- avoid changing prefix behavior yet
+- continue separating **state computation** from **side effects**, especially around:
+  - active location / visibility / focus decisions
+  - pending-window attachment eligibility
+  - geometry computation vs geometry application
+
+That should reduce complexity further without risking another behavioral regression.
+
 ## Success criteria for the refresh refactor phase
 
 This phase is successful when:

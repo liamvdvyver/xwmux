@@ -22,6 +22,7 @@
           src = ./src;
           buildInputs = [pkgs.libx11];
           nativeBuildInputs = [pkgs.cmake];
+          propagatedBuildInputs = [pkgs.python3];
         };
       }
     );

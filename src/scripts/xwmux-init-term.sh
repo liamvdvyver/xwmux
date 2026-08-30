@@ -4,6 +4,48 @@
 
 session_name="default"
 
+resolve_target_session() {
+    state_json=$(xwmux-ctl dump-state 2>/dev/null || true)
+    if [ -z "$state_json" ]; then
+        return 0
+    fi
+
+    active_loc=$(STATE_JSON="$state_json" python3 -c '
+import json
+import os
+import sys
+
+try:
+    state = json.loads(os.environ["STATE_JSON"])
+except Exception:
+    raise SystemExit(0)
+
+active = state.get("active") or {}
+window = active.get("window")
+pane = active.get("pane")
+if window is None or pane is None:
+    raise SystemExit(0)
+
+sys.stdout.write(f"@{window} %{pane}")
+')
+
+    if [ -z "$active_loc" ]; then
+        return 0
+    fi
+
+    active_session=$(tmux_cmd list-panes -a -F '#{session_name} #{window_id} #{pane_id}' |
+        while read -r candidate_session candidate_window candidate_pane; do
+            if [ "$candidate_window $candidate_pane" = "$active_loc" ]; then
+                printf '%s\n' "$candidate_session"
+                break
+            fi
+        done)
+
+    if [ -n "$active_session" ]; then
+        session_name="$active_session"
+    fi
+}
+
 if [ -n "$XWMUX_TMUX_SOCKET" ]; then
     tmux_cmd() {
         tmux -S "$XWMUX_TMUX_SOCKET" "$@"
@@ -72,5 +114,6 @@ prefix=$(tmux_cmd show-options -g prefix | cut -f 2 -d ' ')
 
 xwmux-ctl init "$rows" "$cols" "$pixel_width" "$pixel_height" "$bar_position"
 xwmux-ctl prefix "$prefix"
+resolve_target_session
 
 tmux_cmd new-session -A -s "$session_name"

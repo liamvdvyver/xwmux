@@ -452,6 +452,17 @@ bool WMInstance::needs_redundant_refocus(
            (m_force_active_refocus && same_active_location);
 }
 
+void WMInstance::apply_active_pane_with_focus(const TmuxPaneSnapshot &pane,
+                                              const bool redundant_refocus) {
+    m_tmux_mapping.set_active(m_xstate, pane.location, pane.zoomed,
+                              redundant_refocus);
+}
+
+void WMInstance::apply_active_pane_without_focus(const TmuxPaneSnapshot &pane) {
+    m_tmux_mapping.set_active_without_focus(m_xstate, pane.location,
+                                            pane.zoomed);
+}
+
 void WMInstance::update_overridden_active_focus(
     const TmuxPaneSnapshot &pane, const bool same_active_location,
     const bool redundant_refocus) {
@@ -461,13 +472,12 @@ void WMInstance::update_overridden_active_focus(
         prefix_active, same_active_location, redundant_refocus));
 
     if (prefix_active) {
-        m_tmux_mapping.set_active_without_focus(m_xstate, pane.location,
-                                                pane.zoomed);
+        apply_active_pane_without_focus(pane);
         return;
     }
 
     m_tmux_mapping.clear_override();
-    m_tmux_mapping.set_active(m_xstate, pane.location, pane.zoomed, true);
+    apply_active_pane_with_focus(pane, true);
     m_force_active_refocus = false;
 }
 
@@ -482,8 +492,7 @@ void WMInstance::update_active_focus_from_pane(const TmuxPaneSnapshot &pane) {
         return;
     }
 
-    m_tmux_mapping.set_active(m_xstate, pane.location, pane.zoomed,
-                              redundant_refocus);
+    apply_active_pane_with_focus(pane, redundant_refocus);
     if (same_active_location || m_tmux_mapping.get_active().value() == pane.location) {
         m_force_active_refocus = false;
     }

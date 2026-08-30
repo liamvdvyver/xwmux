@@ -214,6 +214,9 @@ class WMInstance {
     bool is_same_active_location(const TmuxPaneSnapshot &pane) const;
     bool needs_redundant_refocus(const TmuxPaneSnapshot &pane,
                                  bool same_active_location) const;
+    void apply_active_pane_with_focus(const TmuxPaneSnapshot &pane,
+                                      bool redundant_refocus);
+    void apply_active_pane_without_focus(const TmuxPaneSnapshot &pane);
     void update_overridden_active_focus(const TmuxPaneSnapshot &pane,
                                         bool same_active_location,
                                         bool redundant_refocus);

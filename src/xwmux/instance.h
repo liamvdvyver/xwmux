@@ -209,7 +209,7 @@ class WMInstance {
     bool is_refresh_event(const XEvent &ev) const;
     void consume_adjacent_refresh_events();
     void refresh_from_tmux_snapshot();
-    void handle_tmux_position(const Msg &msg);
+    void apply_tmux_pane_snapshot(const TmuxPaneSnapshot &pane);
 
     //--- Client message handlers --------------------------------------------//
 

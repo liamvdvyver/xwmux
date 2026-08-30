@@ -134,20 +134,6 @@ struct DumpState : Command {
     }
 };
 
-std::optional<TmuxLocation> get_loc(int argc, char **argv, int cur) {
-    if (cur + 2 >= argc) {
-        return std::nullopt;
-    }
-    try {
-        uint32_t window_id = 0, pane_id = 0;
-        window_id = std::stoi(argv[cur + 1] + 1);
-        pane_id = std::stoi(argv[cur + 2] + 1);
-        return std::make_pair(window_id, pane_id);
-    } catch (std::invalid_argument &e) {
-        return std::nullopt;
-    }
-}
-
 struct KillPane : Command {
     std::string keyword() const override { return "kill-pane"; }
     std::string usage_suffix() const override {
@@ -174,55 +160,6 @@ struct KillPane : Command {
 
         tm_pane = stoi(std::string(argv[1] + 1));
         return Msg::kill_pane(dpy, tm_pane);
-    }
-};
-
-struct NotifyTmuxPosition : Command {
-    std::string keyword() const override { return "tmux-position"; }
-    std::string usage_suffix() const override {
-        return " focused zoomed $<session-id> @<window-id> %<pane-id> "
-               "pane_left "
-               "pane_top pane_width pane_height dead";
-    }
-    std::string description() const override {
-        return "Internal hook: report a tmux pane's current position to xwmux.";
-    }
-    std::optional<Msg> parse(int argc, char **argv, int cur,
-                             Display *dpy) override {
-        if (cur + 10 != argc - 1) {
-            std::cout << "wrong args\n";
-            return std::nullopt;
-        }
-        cur++;
-
-        try {
-            bool focused = std::stoi(argv[cur++]);
-            bool zoomed = std::stoi(argv[cur++]);
-
-            std::optional<TmuxLocation> loc = get_loc(argc, argv, cur);
-            if (!loc.has_value()) {
-                std::cout << "couldn't get loc\n";
-                return std::nullopt;
-            }
-            cur += 3;
-
-            size_t pane_top, pane_left, pane_width, pane_height;
-            pane_left = std::stoi(argv[cur++]);
-            pane_top = std::stoi(argv[cur++]);
-            pane_width = std::stoi(argv[cur++]);
-            pane_height = std::stoi(argv[cur++]);
-            bool dead = std::stoi(argv[cur++]);
-
-            return Msg::report_position(
-                dpy, loc.value(),
-                WindowPosition({pane_left, pane_top}, {pane_left + pane_width,
-                                                       pane_top + pane_height}),
-                focused, zoomed, dead);
-
-        } catch (std::invalid_argument &e) {
-            std::cout << "couldn't get rest\n";
-            return std::nullopt;
-        }
     }
 };
 
@@ -262,8 +199,6 @@ std::unique_ptr<Command> parse_cmd(std::string cmd) {
         return std::make_unique<DumpState>();
     } else if (cmd == KillPane().keyword()) {
         return std::make_unique<KillPane>();
-    } else if (cmd == NotifyTmuxPosition().keyword()) {
-        return std::make_unique<NotifyTmuxPosition>();
     }
     return nullptr;
 }
@@ -274,7 +209,7 @@ void print_general_help(std::ostream &out) {
 
     const Command *commands[] = {
         new Exit(), new Refresh(), new DumpState(), new KillPane(),
-        new InitLayout(), new InitPrefix(), new NotifyTmuxPosition(),
+        new InitLayout(), new InitPrefix(),
     };
 
     for (const Command *cmd : commands) {

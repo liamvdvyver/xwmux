@@ -91,9 +91,14 @@ std::string msg_summary(Display *display, const Msg &msg,
     return type;
 }
 
-Msg msg_from_snapshot_pane(Display *display, const TmuxPaneSnapshot &pane) {
-    return Msg::report_position(display, pane.location, pane.position,
-                                pane.focused, pane.zoomed, pane.dead);
+TmuxPaneSnapshot snapshot_pane_from_msg(const Msg &msg) {
+    return {
+        .location = msg.tm_location(),
+        .position = msg.window_position(),
+        .focused = msg.focused(),
+        .zoomed = msg.zoomed(),
+        .dead = msg.dead(),
+    };
 }
 
 } // namespace
@@ -149,8 +154,7 @@ void WMInstance::refresh_from_tmux_snapshot() {
     }
 
     for (const TmuxPaneSnapshot &pane : snapshot->panes) {
-        const Msg msg = msg_from_snapshot_pane(m_xstate.display, pane);
-        handle_tmux_position(msg);
+        apply_tmux_pane_snapshot(pane);
     }
 }
 
@@ -409,25 +413,25 @@ void WMInstance::handle_client_msg<MsgType::DUMP_STATE>(const Msg &msg) {
     write_state_json();
 }
 
-void WMInstance::handle_tmux_position(const Msg &msg) {
+void WMInstance::apply_tmux_pane_snapshot(const TmuxPaneSnapshot &pane) {
     xwmux::log_debug(std::format(
-        "Handling IPC: TMUX_POSITION window=@{} pane=%{} focused={} zoomed={} dead={} pos=({},{})->({},{}) layout_initialized={} screen={}x{}\n",
-        msg.tm_window(), msg.tm_pane(), msg.focused(), msg.zoomed(),
-        msg.dead(), msg.window_position().start.x, msg.window_position().start.y,
-        msg.window_position().end.x, msg.window_position().end.y,
-        m_layout_initialized, m_xstate.resolution.x, m_xstate.resolution.y));
-    m_tmux_mapping.move_pane(msg.tm_location());
+        "Applying tmux pane snapshot window=@{} pane=%{} focused={} zoomed={} dead={} pos=({},{})->({},{}) layout_initialized={} screen={}x{}\n",
+        pane.location.first, pane.location.second, pane.focused, pane.zoomed,
+        pane.dead, pane.position.start.x, pane.position.start.y,
+        pane.position.end.x, pane.position.end.y, m_layout_initialized,
+        m_xstate.resolution.x, m_xstate.resolution.y));
+    m_tmux_mapping.move_pane(pane.location);
 
-    if (msg.focused()) {
+    if (pane.focused) {
 
         // Have window to add
-        if (!m_window_q.empty() &&
-            !m_tmux_mapping.is_filled(msg.tm_location()) && msg.dead()) {
+        if (!m_window_q.empty() && !m_tmux_mapping.is_filled(pane.location) &&
+            pane.dead) {
 
             xwmux::log_debug(std::format(
-                "Handling IPC: TMUX_POSITION attaching_pending_window layout_initialized={} pending_queue_size={} target=(@{}, %{})\n",
-                m_layout_initialized, m_window_q.size(), msg.tm_window(),
-                msg.tm_pane()));
+                "Refresh attaching_pending_window layout_initialized={} pending_queue_size={} target=(@{}, %{})\n",
+                m_layout_initialized, m_window_q.size(), pane.location.first,
+                pane.location.second));
 
             Window window = m_window_q.front();
             m_window_q.pop();
@@ -436,80 +440,77 @@ void WMInstance::handle_tmux_position(const Msg &msg) {
             // TODO: avoid WMInstance::adding to queue twice instead?
             if (!m_pending_windows.count(window) ||
                 m_tmux_mapping.has_window(window)) {
-                m_tmux.kill_pane(msg.tm_location().second);
+                m_tmux.kill_pane(pane.location.second);
 
             } else {
                 xwmux::log_debug(std::format(
-                    "Handling IPC: TMUX_POSITION add_window window={} target=(@{}, %{})\n",
-                    static_cast<unsigned long>(window), msg.tm_window(),
-                    msg.tm_pane()));
+                    "Refresh add_window window={} target=(@{}, %{})\n",
+                    static_cast<unsigned long>(window), pane.location.first,
+                    pane.location.second));
                 if (!m_layout_initialized) {
                     xwmux::log_warn(std::format(
                         "Deferring initial GUI geometry until layout initialization for window={} target=(@{}, %{})\n",
-                        static_cast<unsigned long>(window), msg.tm_window(),
-                        msg.tm_pane()));
+                        static_cast<unsigned long>(window), pane.location.first,
+                        pane.location.second));
                 }
-                m_tmux_mapping.add_window(m_xstate, window, msg.tm_location(),
+                m_tmux_mapping.add_window(m_xstate, window, pane.location,
                                           m_layout_initialized);
                 m_pending_windows.erase(window);
-                name_client(window, msg.tm_location().second);
+                name_client(window, pane.location.second);
             }
         }
 
         const bool same_active_location =
             m_tmux_mapping.get_active().has_value() &&
-            m_tmux_mapping.get_active().value() == msg.tm_location();
+            m_tmux_mapping.get_active().value() == pane.location;
         const bool redundant_refocus =
-            (msg.zoomed() && same_active_location &&
-             m_tmux_mapping.is_filled(msg.tm_location())) ||
+            (pane.zoomed && same_active_location &&
+             m_tmux_mapping.is_filled(pane.location)) ||
             (m_force_active_refocus && same_active_location);
 
         if (m_tmux_mapping.overridden()) {
             const bool prefix_active = m_tmux.client_prefix_active();
             xwmux::log_debug(std::format(
-                "Handling IPC: TMUX_POSITION override_state prefix_active={} same_active_location={} redundant_refocus={}\n",
+                "Refresh override_state prefix_active={} same_active_location={} redundant_refocus={}\n",
                 prefix_active, same_active_location, redundant_refocus));
 
             if (prefix_active) {
-                m_tmux_mapping.set_active_without_focus(
-                    m_xstate, msg.tm_location(), msg.zoomed());
+                m_tmux_mapping.set_active_without_focus(m_xstate, pane.location,
+                                                        pane.zoomed);
             } else {
                 m_tmux_mapping.clear_override();
-                m_tmux_mapping.set_active(m_xstate, msg.tm_location(),
-                                          msg.zoomed(), true);
+                m_tmux_mapping.set_active(m_xstate, pane.location, pane.zoomed,
+                                          true);
                 m_force_active_refocus = false;
             }
         } else {
-            m_tmux_mapping.set_active(m_xstate, msg.tm_location(),
-                                      msg.zoomed(), redundant_refocus);
-            if (same_active_location || m_tmux_mapping.get_active().value() == msg.tm_location()) {
+            m_tmux_mapping.set_active(m_xstate, pane.location, pane.zoomed,
+                                      redundant_refocus);
+            if (same_active_location ||
+                m_tmux_mapping.get_active().value() == pane.location) {
                 m_force_active_refocus = false;
             }
         }
     }
 
-    // set_position(msg.tm_location(), msg.window_position());
-    // Moves the (possible window) at location to term_position
-    // If pane doesn't have a window, do nothing
-    // If pane is in seperate window, moves the pane
     if (!m_layout_initialized) {
         xwmux::log_warn(std::format(
             "Skipping pane geometry update before layout initialization for target=(@{}, %{})\n",
-            msg.tm_window(), msg.tm_pane()));
+            pane.location.first, pane.location.second));
         return;
     }
 
     WindowPosition gui_position = m_xstate.term_layout.term_to_screen_pos(
-        m_xstate.term_layout.add_bar(msg.window_position()));
+        m_xstate.term_layout.add_bar(pane.position));
 
-    if (m_tmux_mapping.is_filled(msg.tm_location())) {
-        m_tmux_mapping[msg.tm_location()].set_position(m_xstate, gui_position);
+    if (m_tmux_mapping.is_filled(pane.location)) {
+        m_tmux_mapping[pane.location].set_position(m_xstate, gui_position);
     }
 }
 
 template <>
 void WMInstance::handle_client_msg<MsgType::TMUX_POSITION>(const Msg &msg) {
-    handle_tmux_position(msg);
+    apply_tmux_pane_snapshot(snapshot_pane_from_msg(msg));
 }
 
 template <>

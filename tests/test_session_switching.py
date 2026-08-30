@@ -207,6 +207,57 @@ class SessionSwitchingIntegrationTest(unittest.TestCase):
             message="reattaching after detach did not show the alt session GUI",
         )
 
+    def test_switching_back_to_original_session_restores_original_gui_focus(self):
+        default_gui = self.harness.launch_and_wait_for_gui_pane(
+            title="xwmux-session-return-default-gui"
+        )
+
+        self._create_session("alt")
+        self._switch_session("alt")
+        self.harness.wait_for(
+            lambda: self._current_session_name() == "alt",
+            message="switch-client did not move the client to the alt session",
+        )
+        self._wait_for_gui_hidden_state(
+            default_gui,
+            True,
+            message="switching to the alt session did not hide the default GUI",
+        )
+
+        alt_gui = self._launch_gui_pane_for_title("xwmux-session-return-alt-gui")
+        self._wait_for_gui_hidden_state(
+            alt_gui,
+            False,
+            message="the alt session GUI was not shown after launching it",
+        )
+
+        self._switch_session("default")
+        self.harness.wait_for(
+            lambda: self._current_session_name() == "default",
+            message="switch-client did not move the client back to the default session",
+        )
+        self.harness.tmux("select-pane", "-t", f"%{default_gui['pane']}")
+
+        self.harness.wait_for_state(
+            lambda s: s.get("active")
+            == {"window": default_gui["window"], "pane": default_gui["pane"]},
+            message="switching back to the default session did not restore the default GUI pane as active",
+        )
+        self._wait_for_gui_hidden_state(
+            default_gui,
+            False,
+            message="switching back to the default session did not show the default GUI",
+        )
+        self._wait_for_gui_hidden_state(
+            alt_gui,
+            True,
+            message="switching back to the default session did not hide the alt GUI",
+        )
+        self.harness.wait_for(
+            lambda: self.harness.focused_window_id() == default_gui["x_window"],
+            message="switching back to the default session did not restore X focus to the default GUI",
+        )
+
 
 if __name__ == "__main__":
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(SessionSwitchingIntegrationTest)

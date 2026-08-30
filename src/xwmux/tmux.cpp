@@ -137,10 +137,26 @@ bool TmuxClient::find_pane(const TmuxPaneID tm_pane) const {
 }
 
 std::optional<TmuxSnapshot> TmuxClient::snapshot() const {
+    std::optional<TmuxLocation> active_location;
+    if (const std::optional<std::string> active_output = capture(std::format(
+            "{} display-message -p '{}'", base_command(),
+            "#{window_id} #{pane_id}"));
+        active_output.has_value()) {
+        std::istringstream active_fields(active_output.value());
+        std::string window_id_text;
+        std::string pane_id_text;
+        if (active_fields >> window_id_text >> pane_id_text &&
+            window_id_text.size() >= 2 && window_id_text[0] == '@' &&
+            pane_id_text.size() >= 2 && pane_id_text[0] == '%') {
+            active_location = {std::stoi(window_id_text.substr(1)),
+                               std::stoi(pane_id_text.substr(1))};
+        }
+    }
+
     const std::string command = std::format(
         "{} list-panes -a -F '{}'",
         base_command(),
-        "#{window_active} #{pane_active} #{window_zoomed_flag} #{window_id} #{pane_id} #{pane_left} #{pane_top} #{pane_width} #{pane_height} #{pane_dead}");
+        "#{window_zoomed_flag} #{window_id} #{pane_id} #{pane_left} #{pane_top} #{pane_width} #{pane_height} #{pane_dead}");
     std::optional<std::string> output = capture(command);
     if (!output.has_value()) {
         xwmux::log_error("Failed to query tmux pane snapshot.\n");
@@ -156,8 +172,6 @@ std::optional<TmuxSnapshot> TmuxClient::snapshot() const {
         }
 
         std::istringstream fields(line);
-        int window_active = 0;
-        int pane_active = 0;
         int window_zoomed = 0;
         std::string window_id_text;
         std::string pane_id_text;
@@ -166,9 +180,9 @@ std::optional<TmuxSnapshot> TmuxClient::snapshot() const {
         size_t pane_width = 0;
         size_t pane_height = 0;
         int pane_dead = 0;
-        if (!(fields >> window_active >> pane_active >> window_zoomed >>
-              window_id_text >> pane_id_text >> pane_left >> pane_top >>
-              pane_width >> pane_height >> pane_dead)) {
+        if (!(fields >> window_zoomed >> window_id_text >> pane_id_text >>
+              pane_left >> pane_top >> pane_width >> pane_height >>
+              pane_dead)) {
             xwmux::log_error(
                 std::format("Failed to parse tmux pane snapshot line: {}\n", line));
             return std::nullopt;
@@ -182,12 +196,14 @@ std::optional<TmuxSnapshot> TmuxClient::snapshot() const {
 
         const TmuxWindowID window_id = std::stoi(window_id_text.substr(1));
         const TmuxPaneID pane_id = std::stoi(pane_id_text.substr(1));
+        const TmuxLocation location{window_id, pane_id};
         snapshot.panes.push_back({
-            .location = {window_id, pane_id},
+            .location = location,
             .position = WindowPosition({pane_left, pane_top},
                                        {pane_left + pane_width,
                                         pane_top + pane_height}),
-            .focused = static_cast<bool>(window_active && pane_active),
+            .focused = active_location.has_value() &&
+                       active_location.value() == location,
             .zoomed = static_cast<bool>(window_zoomed),
             .dead = static_cast<bool>(pane_dead),
         });

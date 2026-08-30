@@ -43,10 +43,6 @@
                   pkgs.xwininfo
                   pkgs.xorg.xmessage
                   pkgs.xorg.xorgserver
-                  pkgs.kitty
-                  pkgs.alacritty
-                  pkgs.st
-                  pkgs.xterm
                 ]}
             done
           '';

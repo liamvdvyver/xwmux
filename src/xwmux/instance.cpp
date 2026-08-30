@@ -128,6 +128,12 @@ void WMInstance::remove_orphaned_windows(const TmuxSnapshot &snapshot) {
     }
 }
 
+void WMInstance::apply_snapshot_panes(const TmuxSnapshot &snapshot) {
+    for (const TmuxPaneSnapshot &pane : snapshot.panes) {
+        apply_tmux_pane_snapshot(pane);
+    }
+}
+
 void WMInstance::refresh_from_tmux_snapshot() {
     xwmux::log_debug("Refreshing WM state from tmux snapshot\n");
     const std::optional<TmuxSnapshot> snapshot = m_tmux.snapshot();
@@ -136,11 +142,11 @@ void WMInstance::refresh_from_tmux_snapshot() {
         return;
     }
 
+    // Phase 1: prune mappings for panes that no longer exist in tmux.
     remove_orphaned_windows(snapshot.value());
 
-    for (const TmuxPaneSnapshot &pane : snapshot->panes) {
-        apply_tmux_pane_snapshot(pane);
-    }
+    // Phase 2: apply pane-driven mapping/focus/geometry updates.
+    apply_snapshot_panes(snapshot.value());
 }
 
 template <>

@@ -16,6 +16,7 @@ extern "C" {
 #include <iostream>
 #include <queue>
 #include <unordered_set>
+#include <vector>
 
 #include "ipc.h"
 #include "log.h"
@@ -68,9 +69,13 @@ class WMInstance {
 
         while (!m_stop) {
 
-            // Handle event
             XNextEvent(m_xstate.display, &ev);
-            handle_event(ev);
+            if (is_refresh_event(ev)) {
+                consume_adjacent_refresh_events();
+                refresh_from_tmux_snapshot();
+            } else {
+                handle_event(ev);
+            }
             m_xstate.sync();
         }
     };
@@ -201,6 +206,10 @@ class WMInstance {
     template <int XEventType, typename T> void handle_x_event(T &ev);
 
     void handle_event(XEvent &ev);
+    bool is_refresh_event(const XEvent &ev) const;
+    void consume_adjacent_refresh_events();
+    void refresh_from_tmux_snapshot();
+    void handle_tmux_position(const Msg &msg);
 
     //--- Client message handlers --------------------------------------------//
 

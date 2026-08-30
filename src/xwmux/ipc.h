@@ -21,6 +21,7 @@ enum class MsgType {
     RESOLUTION,
     PREFIX,
     EXIT,
+    REFRESH,
     TMUX_POSITION,
     KILL_PANE,
     KILL_ORPHANS,
@@ -35,6 +36,8 @@ constexpr Atom msg_type_atom(Display *dpy, const MsgType type) {
         return XInternAtom(dpy, "_XW_PREFIX", 0);
     case MsgType::EXIT:
         return XInternAtom(dpy, "_XW_EXIT", 0);
+    case MsgType::REFRESH:
+        return XInternAtom(dpy, "_XW_REFRESH", 0);
     case MsgType::TMUX_POSITION:
         return XInternAtom(dpy, "_XW_TMUX_POSITION", 0);
     case MsgType::KILL_PANE:
@@ -50,7 +53,7 @@ constexpr Atom msg_type_atom(Display *dpy, const MsgType type) {
 struct Msg {
 
     constexpr Msg(const XClientMessageEvent &ev) : m_ev({.xclient = ev}) {
-        assert(ev.type = ClientMessage);
+        assert(ev.type == ClientMessage);
     }
 
     // Static factory methods
@@ -102,6 +105,10 @@ struct Msg {
 
     constexpr static Msg exit(Display *const dpy) {
         return Msg(dpy, MsgType::EXIT);
+    }
+
+    constexpr static Msg refresh(Display *const dpy) {
+        return Msg(dpy, MsgType::REFRESH);
     }
 
     constexpr static Msg dump_state(Display *const dpy) {

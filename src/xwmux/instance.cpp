@@ -47,6 +47,9 @@ std::string msg_type_name(Display *display, const Atom atom) {
     if (atom == msg_type_atom(display, MsgType::EXIT)) {
         return "EXIT";
     }
+    if (atom == msg_type_atom(display, MsgType::REFRESH)) {
+        return "REFRESH";
+    }
     if (atom == msg_type_atom(display, MsgType::TMUX_POSITION)) {
         return "TMUX_POSITION";
     }
@@ -88,7 +91,68 @@ std::string msg_summary(Display *display, const Msg &msg,
     return type;
 }
 
+Msg msg_from_snapshot_pane(Display *display, const TmuxPaneSnapshot &pane) {
+    return Msg::report_position(display, pane.location, pane.position,
+                                pane.focused, pane.zoomed, pane.dead);
+}
+
 } // namespace
+
+bool WMInstance::is_refresh_event(const XEvent &ev) const {
+    return ev.type == ClientMessage &&
+           ev.xclient.message_type == msg_type_atom(m_xstate.display, MsgType::REFRESH);
+}
+
+void WMInstance::consume_adjacent_refresh_events() {
+    size_t coalesced = 1;
+    while (XPending(m_xstate.display) > 0) {
+        XEvent next;
+        XPeekEvent(m_xstate.display, &next);
+        if (!is_refresh_event(next)) {
+            break;
+        }
+        XNextEvent(m_xstate.display, &next);
+        coalesced++;
+    }
+    xwmux::log_debug(std::format(
+        "Coalesced refresh burst size={}\n", coalesced));
+}
+
+void WMInstance::refresh_from_tmux_snapshot() {
+    xwmux::log_debug("Refreshing WM state from tmux snapshot\n");
+    const std::optional<TmuxSnapshot> snapshot = m_tmux.snapshot();
+    if (!snapshot.has_value()) {
+        xwmux::log_warn("Skipping refresh: failed to read tmux snapshot\n");
+        return;
+    }
+
+    std::unordered_set<TmuxPaneID> live_panes;
+    for (const TmuxPaneSnapshot &pane : snapshot->panes) {
+        live_panes.insert(pane.location.second);
+    }
+
+    std::vector<Window> orphan_windows;
+    for (const auto &[tm_window, workspace] : m_tmux_mapping.get_workspaces()) {
+        (void)tm_window;
+        for (const auto &[tm_pane, window_pane] : workspace.get_windows()) {
+            if (!live_panes.contains(tm_pane)) {
+                orphan_windows.push_back(window_pane.get_window());
+            }
+        }
+    }
+    for (const Window orphan : orphan_windows) {
+        xwmux::log_debug(std::format(
+            "Refresh removing orphaned window={}\n",
+            static_cast<unsigned long>(orphan)));
+        m_tmux_mapping.kill_client(orphan, m_xstate.display);
+        m_tmux_mapping.remove_window(m_tmux, orphan, false);
+    }
+
+    for (const TmuxPaneSnapshot &pane : snapshot->panes) {
+        const Msg msg = msg_from_snapshot_pane(m_xstate.display, pane);
+        handle_tmux_position(msg);
+    }
+}
 
 template <>
 void WMInstance::handle_x_event<ConfigureNotify>(XConfigureEvent &ev) {
@@ -332,14 +396,20 @@ template <> void WMInstance::handle_client_msg<MsgType::EXIT>(const Msg &msg) {
 }
 
 template <>
+void WMInstance::handle_client_msg<MsgType::REFRESH>(const Msg &msg) {
+    (void)msg;
+    xwmux::log_debug("Handling IPC: REFRESH (unexpected direct dispatch)\n");
+    refresh_from_tmux_snapshot();
+}
+
+template <>
 void WMInstance::handle_client_msg<MsgType::DUMP_STATE>(const Msg &msg) {
     (void)msg;
     xwmux::log_debug("Handling IPC: DUMP_STATE\n");
     write_state_json();
 }
 
-template <>
-void WMInstance::handle_client_msg<MsgType::TMUX_POSITION>(const Msg &msg) {
+void WMInstance::handle_tmux_position(const Msg &msg) {
     xwmux::log_debug(std::format(
         "Handling IPC: TMUX_POSITION window=@{} pane=%{} focused={} zoomed={} dead={} pos=({},{})->({},{}) layout_initialized={} screen={}x{}\n",
         msg.tm_window(), msg.tm_pane(), msg.focused(), msg.zoomed(),
@@ -438,6 +508,11 @@ void WMInstance::handle_client_msg<MsgType::TMUX_POSITION>(const Msg &msg) {
 }
 
 template <>
+void WMInstance::handle_client_msg<MsgType::TMUX_POSITION>(const Msg &msg) {
+    handle_tmux_position(msg);
+}
+
+template <>
 void WMInstance::handle_x_event<ClientMessage>(XClientMessageEvent &ev) {
     const Msg msg{ev};
     xwmux::log_debug(std::format("Handling X event: {} {}\n",
@@ -452,6 +527,9 @@ void WMInstance::handle_x_event<ClientMessage>(XClientMessageEvent &ev) {
     } else if (ev.message_type ==
                msg_type_atom(m_xstate.display, MsgType::EXIT)) {
         handle_client_msg<MsgType::EXIT>(msg);
+    } else if (ev.message_type ==
+               msg_type_atom(m_xstate.display, MsgType::REFRESH)) {
+        handle_client_msg<MsgType::REFRESH>(msg);
     } else if (ev.message_type ==
                msg_type_atom(m_xstate.display, MsgType::KILL_PANE)) {
         handle_client_msg<MsgType::KILL_PANE>(msg);

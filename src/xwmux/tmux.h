@@ -13,6 +13,7 @@
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include "log.h"
 #include "xwrapper.h"
@@ -21,6 +22,18 @@ using TmuxWindowID = int32_t;
 using TmuxPaneID = int32_t;
 
 using TmuxLocation = std::pair<TmuxWindowID, TmuxPaneID>;
+
+struct TmuxPaneSnapshot {
+    TmuxLocation location;
+    WindowPosition position;
+    bool focused = false;
+    bool zoomed = false;
+    bool dead = false;
+};
+
+struct TmuxSnapshot {
+    std::vector<TmuxPaneSnapshot> panes;
+};
 
 class TmuxClient {
   public:
@@ -36,8 +49,12 @@ class TmuxClient {
     void send_escape() const;
     bool client_prefix_active() const;
     bool find_pane(const TmuxPaneID tm_pane) const;
+    std::optional<TmuxSnapshot> snapshot() const;
 
     const std::optional<std::string> &socket() const { return m_socket; }
+
+  private:
+    std::optional<std::string> capture(const std::string &command) const;
 
   private:
     std::optional<std::string> m_socket;

@@ -104,6 +104,21 @@ struct Exit : Command {
     }
 };
 
+struct Refresh : Command {
+    std::string keyword() const override { return "refresh"; }
+    std::string usage_suffix() const override { return ""; }
+    std::string description() const override {
+        return "Internal hook: request a tmux snapshot refresh in xwmux.";
+    }
+    std::optional<Msg> parse(int argc, char **argv, int cur,
+                             Display *dpy) override {
+        (void)argc;
+        (void)argv;
+        (void)cur;
+        return Msg::refresh(dpy);
+    }
+};
+
 struct DumpState : Command {
     std::string keyword() const override { return "dump-state"; }
     std::string usage_suffix() const override { return ""; }
@@ -241,6 +256,8 @@ std::unique_ptr<Command> parse_cmd(std::string cmd) {
         return std::make_unique<InitPrefix>();
     } else if (cmd == Exit().keyword()) {
         return std::make_unique<Exit>();
+    } else if (cmd == Refresh().keyword()) {
+        return std::make_unique<Refresh>();
     } else if (cmd == DumpState().keyword()) {
         return std::make_unique<DumpState>();
     } else if (cmd == KillPane().keyword()) {
@@ -256,8 +273,8 @@ void print_general_help(std::ostream &out) {
     out << "Commands:\n";
 
     const Command *commands[] = {
-        new Exit(), new DumpState(), new KillPane(), new InitLayout(),
-        new InitPrefix(), new NotifyTmuxPosition(),
+        new Exit(), new Refresh(), new DumpState(), new KillPane(),
+        new InitLayout(), new InitPrefix(), new NotifyTmuxPosition(),
     };
 
     for (const Command *cmd : commands) {

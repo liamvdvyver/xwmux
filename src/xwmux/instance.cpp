@@ -96,9 +96,14 @@ void WMInstance::handle_x_event<ConfigureNotify>(XConfigureEvent &ev) {
                                  static_cast<unsigned long>(ev.window), ev.width,
                                  ev.height));
     if (ev.window == m_xstate.root) {
-        m_xstate.set_resolution(
-            {static_cast<size_t>(ev.width), static_cast<size_t>(ev.height)});
-        m_xstate.close_term();
+        m_xstate.resolution = {static_cast<size_t>(ev.width),
+                               static_cast<size_t>(ev.height)};
+        m_xstate.term_layout.set_screen_resolution(m_xstate.resolution);
+
+        if (m_xstate.term.has_value() && !m_term_restart_pending) {
+            m_term_restart_pending = true;
+            m_xstate.close_term();
+        }
     }
 }
 
@@ -135,7 +140,17 @@ template <> void WMInstance::handle_x_event<MapRequest>(XMapRequestEvent &ev) {
         m_xstate.resolution.fullscreen().resize_to(m_xstate.display, w);
         XLowerWindow(m_xstate.display, w);
         XMapWindow(m_xstate.display, w);
-        m_xstate.focus_term();
+
+        if (m_tmux_mapping.get_active().has_value() &&
+            m_tmux_mapping.is_filled(m_tmux_mapping.get_active().value())) {
+            m_force_active_refocus = true;
+            m_tmux_mapping.set_active(m_xstate,
+                                      m_tmux_mapping.get_active().value(),
+                                      false, true);
+        } else {
+            m_force_active_refocus = false;
+            m_xstate.focus_term();
+        }
     } else if (!m_pending_windows.count(w)) {
 
         if (m_xstate.init_state(w).value_or(NormalState) != NormalState) {
@@ -171,10 +186,10 @@ template <>
 void WMInstance::handle_x_event<DestroyNotify>(XDestroyWindowEvent &ev) {
     xwmux::log_debug(std::format("Handling X event: DestroyNotify window={}\n",
                                  static_cast<unsigned long>(ev.window)));
-    if (ev.window == m_xstate.term) {
+    if (m_xstate.term.has_value() && ev.window == m_xstate.term.value()) {
         m_xstate.term = {};
+        m_term_restart_pending = false;
         m_xstate.open_term();
-        m_xstate.focus_term();
     } else if (!m_tmux_mapping.has_window(ev.window)) {
         m_pending_windows.erase(ev.window);
         // Not focused yet, do not focus terminal
@@ -375,8 +390,9 @@ void WMInstance::handle_client_msg<MsgType::TMUX_POSITION>(const Msg &msg) {
             m_tmux_mapping.get_active().has_value() &&
             m_tmux_mapping.get_active().value() == msg.tm_location();
         const bool redundant_refocus =
-            msg.zoomed() && same_active_location &&
-            m_tmux_mapping.is_filled(msg.tm_location());
+            (msg.zoomed() && same_active_location &&
+             m_tmux_mapping.is_filled(msg.tm_location())) ||
+            (m_force_active_refocus && same_active_location);
 
         if (m_tmux_mapping.overridden()) {
             const bool prefix_active = m_tmux.client_prefix_active();
@@ -391,10 +407,14 @@ void WMInstance::handle_client_msg<MsgType::TMUX_POSITION>(const Msg &msg) {
                 m_tmux_mapping.clear_override();
                 m_tmux_mapping.set_active(m_xstate, msg.tm_location(),
                                           msg.zoomed(), true);
+                m_force_active_refocus = false;
             }
         } else {
             m_tmux_mapping.set_active(m_xstate, msg.tm_location(),
                                       msg.zoomed(), redundant_refocus);
+            if (same_active_location || m_tmux_mapping.get_active().value() == msg.tm_location()) {
+                m_force_active_refocus = false;
+            }
         }
     }
 

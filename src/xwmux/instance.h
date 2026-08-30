@@ -104,6 +104,15 @@ class WMInstance {
     // Whether terminal layout/resolution has been initialized from IPC
     bool m_layout_initialized = false;
 
+    // A root-terminal restart was requested and we are waiting for the old
+    // terminal window to be destroyed before opening a replacement.
+    bool m_term_restart_pending = false;
+
+    // Force the next focused tmux position update to refocus the active pane.
+    // This is used after recreating the root terminal, since the new terminal
+    // may briefly steal X focus even though the active tmux pane did not change.
+    bool m_force_active_refocus = false;
+
     //--- Helpers ------------------------------------------------------------//
 
     void notify(std::string_view msg) const {

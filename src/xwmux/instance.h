@@ -209,6 +209,7 @@ class WMInstance {
     bool is_refresh_event(const XEvent &ev) const;
     void consume_adjacent_refresh_events();
     void refresh_from_tmux_snapshot();
+    void remove_orphaned_windows(const TmuxSnapshot &snapshot);
     void maybe_attach_pending_window(const TmuxPaneSnapshot &pane);
     void update_active_focus_from_pane(const TmuxPaneSnapshot &pane);
     void apply_pane_geometry(const TmuxPaneSnapshot &pane);

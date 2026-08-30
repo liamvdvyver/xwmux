@@ -103,16 +103,9 @@ void WMInstance::consume_adjacent_refresh_events() {
         "Coalesced refresh burst size={}\n", coalesced));
 }
 
-void WMInstance::refresh_from_tmux_snapshot() {
-    xwmux::log_debug("Refreshing WM state from tmux snapshot\n");
-    const std::optional<TmuxSnapshot> snapshot = m_tmux.snapshot();
-    if (!snapshot.has_value()) {
-        xwmux::log_warn("Skipping refresh: failed to read tmux snapshot\n");
-        return;
-    }
-
+void WMInstance::remove_orphaned_windows(const TmuxSnapshot &snapshot) {
     std::unordered_set<TmuxPaneID> live_panes;
-    for (const TmuxPaneSnapshot &pane : snapshot->panes) {
+    for (const TmuxPaneSnapshot &pane : snapshot.panes) {
         live_panes.insert(pane.location.second);
     }
 
@@ -125,6 +118,7 @@ void WMInstance::refresh_from_tmux_snapshot() {
             }
         }
     }
+
     for (const Window orphan : orphan_windows) {
         xwmux::log_debug(std::format(
             "Refresh removing orphaned window={}\n",
@@ -132,6 +126,17 @@ void WMInstance::refresh_from_tmux_snapshot() {
         m_tmux_mapping.kill_client(orphan, m_xstate.display);
         m_tmux_mapping.remove_window(m_tmux, orphan, false);
     }
+}
+
+void WMInstance::refresh_from_tmux_snapshot() {
+    xwmux::log_debug("Refreshing WM state from tmux snapshot\n");
+    const std::optional<TmuxSnapshot> snapshot = m_tmux.snapshot();
+    if (!snapshot.has_value()) {
+        xwmux::log_warn("Skipping refresh: failed to read tmux snapshot\n");
+        return;
+    }
+
+    remove_orphaned_windows(snapshot.value());
 
     for (const TmuxPaneSnapshot &pane : snapshot->panes) {
         apply_tmux_pane_snapshot(pane);

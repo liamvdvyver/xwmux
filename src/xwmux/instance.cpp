@@ -393,86 +393,77 @@ void WMInstance::handle_client_msg<MsgType::DUMP_STATE>(const Msg &msg) {
     write_state_json();
 }
 
-void WMInstance::apply_tmux_pane_snapshot(const TmuxPaneSnapshot &pane) {
-    xwmux::log_debug(std::format(
-        "Applying tmux pane snapshot window=@{} pane=%{} focused={} zoomed={} dead={} pos=({},{})->({},{}) layout_initialized={} screen={}x{}\n",
-        pane.location.first, pane.location.second, pane.focused, pane.zoomed,
-        pane.dead, pane.position.start.x, pane.position.start.y,
-        pane.position.end.x, pane.position.end.y, m_layout_initialized,
-        m_xstate.resolution.x, m_xstate.resolution.y));
-    m_tmux_mapping.move_pane(pane.location);
+void WMInstance::maybe_attach_pending_window(const TmuxPaneSnapshot &pane) {
+    if (!m_window_q.empty() && !m_tmux_mapping.is_filled(pane.location) &&
+        pane.dead) {
 
-    if (pane.focused) {
+        xwmux::log_debug(std::format(
+            "Refresh attaching_pending_window layout_initialized={} pending_queue_size={} target=(@{}, %{})\n",
+            m_layout_initialized, m_window_q.size(), pane.location.first,
+            pane.location.second));
 
-        // Have window to add
-        if (!m_window_q.empty() && !m_tmux_mapping.is_filled(pane.location) &&
-            pane.dead) {
+        Window window = m_window_q.front();
+        m_window_q.pop();
 
+        // Already destroyed or window already mapped, so kill the pane
+        // TODO: avoid WMInstance::adding to queue twice instead?
+        if (!m_pending_windows.count(window) || m_tmux_mapping.has_window(window)) {
+            m_tmux.kill_pane(pane.location.second);
+
+        } else {
             xwmux::log_debug(std::format(
-                "Refresh attaching_pending_window layout_initialized={} pending_queue_size={} target=(@{}, %{})\n",
-                m_layout_initialized, m_window_q.size(), pane.location.first,
+                "Refresh add_window window={} target=(@{}, %{})\n",
+                static_cast<unsigned long>(window), pane.location.first,
                 pane.location.second));
-
-            Window window = m_window_q.front();
-            m_window_q.pop();
-
-            // Already destroyed or window already mapped, so kill the pane
-            // TODO: avoid WMInstance::adding to queue twice instead?
-            if (!m_pending_windows.count(window) ||
-                m_tmux_mapping.has_window(window)) {
-                m_tmux.kill_pane(pane.location.second);
-
-            } else {
-                xwmux::log_debug(std::format(
-                    "Refresh add_window window={} target=(@{}, %{})\n",
+            if (!m_layout_initialized) {
+                xwmux::log_warn(std::format(
+                    "Deferring initial GUI geometry until layout initialization for window={} target=(@{}, %{})\n",
                     static_cast<unsigned long>(window), pane.location.first,
                     pane.location.second));
-                if (!m_layout_initialized) {
-                    xwmux::log_warn(std::format(
-                        "Deferring initial GUI geometry until layout initialization for window={} target=(@{}, %{})\n",
-                        static_cast<unsigned long>(window), pane.location.first,
-                        pane.location.second));
-                }
-                m_tmux_mapping.add_window(m_xstate, window, pane.location,
-                                          m_layout_initialized);
-                m_pending_windows.erase(window);
-                name_client(window, pane.location.second);
             }
-        }
-
-        const bool same_active_location =
-            m_tmux_mapping.get_active().has_value() &&
-            m_tmux_mapping.get_active().value() == pane.location;
-        const bool redundant_refocus =
-            (pane.zoomed && same_active_location &&
-             m_tmux_mapping.is_filled(pane.location)) ||
-            (m_force_active_refocus && same_active_location);
-
-        if (m_tmux_mapping.overridden()) {
-            const bool prefix_active = m_tmux.client_prefix_active();
-            xwmux::log_debug(std::format(
-                "Refresh override_state prefix_active={} same_active_location={} redundant_refocus={}\n",
-                prefix_active, same_active_location, redundant_refocus));
-
-            if (prefix_active) {
-                m_tmux_mapping.set_active_without_focus(m_xstate, pane.location,
-                                                        pane.zoomed);
-            } else {
-                m_tmux_mapping.clear_override();
-                m_tmux_mapping.set_active(m_xstate, pane.location, pane.zoomed,
-                                          true);
-                m_force_active_refocus = false;
-            }
-        } else {
-            m_tmux_mapping.set_active(m_xstate, pane.location, pane.zoomed,
-                                      redundant_refocus);
-            if (same_active_location ||
-                m_tmux_mapping.get_active().value() == pane.location) {
-                m_force_active_refocus = false;
-            }
+            m_tmux_mapping.add_window(m_xstate, window, pane.location,
+                                      m_layout_initialized);
+            m_pending_windows.erase(window);
+            name_client(window, pane.location.second);
         }
     }
+}
 
+void WMInstance::update_active_focus_from_pane(const TmuxPaneSnapshot &pane) {
+    const bool same_active_location =
+        m_tmux_mapping.get_active().has_value() &&
+        m_tmux_mapping.get_active().value() == pane.location;
+    const bool redundant_refocus =
+        (pane.zoomed && same_active_location &&
+         m_tmux_mapping.is_filled(pane.location)) ||
+        (m_force_active_refocus && same_active_location);
+
+    if (m_tmux_mapping.overridden()) {
+        const bool prefix_active = m_tmux.client_prefix_active();
+        xwmux::log_debug(std::format(
+            "Refresh override_state prefix_active={} same_active_location={} redundant_refocus={}\n",
+            prefix_active, same_active_location, redundant_refocus));
+
+        if (prefix_active) {
+            m_tmux_mapping.set_active_without_focus(m_xstate, pane.location,
+                                                    pane.zoomed);
+        } else {
+            m_tmux_mapping.clear_override();
+            m_tmux_mapping.set_active(m_xstate, pane.location, pane.zoomed,
+                                      true);
+            m_force_active_refocus = false;
+        }
+    } else {
+        m_tmux_mapping.set_active(m_xstate, pane.location, pane.zoomed,
+                                  redundant_refocus);
+        if (same_active_location ||
+            m_tmux_mapping.get_active().value() == pane.location) {
+            m_force_active_refocus = false;
+        }
+    }
+}
+
+void WMInstance::apply_pane_geometry(const TmuxPaneSnapshot &pane) {
     if (!m_layout_initialized) {
         xwmux::log_warn(std::format(
             "Skipping pane geometry update before layout initialization for target=(@{}, %{})\n",
@@ -486,6 +477,23 @@ void WMInstance::apply_tmux_pane_snapshot(const TmuxPaneSnapshot &pane) {
     if (m_tmux_mapping.is_filled(pane.location)) {
         m_tmux_mapping[pane.location].set_position(m_xstate, gui_position);
     }
+}
+
+void WMInstance::apply_tmux_pane_snapshot(const TmuxPaneSnapshot &pane) {
+    xwmux::log_debug(std::format(
+        "Applying tmux pane snapshot window=@{} pane=%{} focused={} zoomed={} dead={} pos=({},{})->({},{}) layout_initialized={} screen={}x{}\n",
+        pane.location.first, pane.location.second, pane.focused, pane.zoomed,
+        pane.dead, pane.position.start.x, pane.position.start.y,
+        pane.position.end.x, pane.position.end.y, m_layout_initialized,
+        m_xstate.resolution.x, m_xstate.resolution.y));
+    m_tmux_mapping.move_pane(pane.location);
+
+    if (pane.focused) {
+        maybe_attach_pending_window(pane);
+        update_active_focus_from_pane(pane);
+    }
+
+    apply_pane_geometry(pane);
 }
 
 template <>

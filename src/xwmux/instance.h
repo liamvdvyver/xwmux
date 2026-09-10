@@ -218,6 +218,10 @@ class WMInstance {
                                  bool same_active_location) const;
     void maybe_clear_forced_refocus(const TmuxPaneSnapshot &pane,
                                     bool same_active_location);
+    void apply_active_workspace_visibility(const TmuxLocation &location,
+                                           bool zoomed);
+    void focus_active_pane(const TmuxLocation &location,
+                           bool redundant_refocus);
     void apply_active_pane_with_focus(const TmuxPaneSnapshot &pane,
                                       bool redundant_refocus);
     void apply_active_pane_without_focus(const TmuxPaneSnapshot &pane);

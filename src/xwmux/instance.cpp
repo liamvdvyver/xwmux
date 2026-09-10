@@ -203,9 +203,10 @@ template <> void WMInstance::handle_x_event<MapRequest>(XMapRequestEvent &ev) {
         if (m_tmux_mapping.get_active().has_value() &&
             m_tmux_mapping.is_filled(m_tmux_mapping.get_active().value())) {
             m_force_active_refocus = true;
-            m_tmux_mapping.set_active(m_xstate,
-                                      m_tmux_mapping.get_active().value(),
-                                      false, true);
+            const TmuxLocation active_location =
+                m_tmux_mapping.get_active().value();
+            apply_active_workspace_visibility(active_location, false);
+            focus_active_pane(active_location, true);
         } else {
             m_force_active_refocus = false;
             m_xstate.focus_term();
@@ -275,7 +276,8 @@ template <> void WMInstance::handle_x_event<KeyPress>(XEvent &ev) {
 
             m_tmux.send_escape();
 
-            m_tmux_mapping.release_override(m_xstate);
+            m_tmux_mapping.clear_override();
+            focus_active_pane(m_tmux_mapping.get_active().value(), true);
 
             // HACK: ensure the focused window has input focus before the keys
             // are sent.
@@ -469,15 +471,74 @@ void WMInstance::maybe_clear_forced_refocus(const TmuxPaneSnapshot &pane,
     }
 }
 
+void WMInstance::apply_active_workspace_visibility(
+    const TmuxLocation &location, const bool zoomed) {
+    const std::optional<TmuxLocation> active_location =
+        m_tmux_mapping.get_active();
+    xwmux::log_debug(std::format(
+        "Applying active workspace visibility target_window=@{} previous_active=({}, {}) zoomed_pane={}\n",
+        location.first,
+        active_location.has_value() ? active_location->first : -1,
+        active_location.has_value() ? active_location->second : -1,
+        zoomed ? std::to_string(location.second) : std::string("none")));
+
+    if (active_location.has_value() &&
+        active_location->first != location.first) {
+        m_tmux_mapping.workspace(active_location->first).hide(m_xstate);
+    }
+
+    if (zoomed) {
+        m_tmux_mapping.workspace(location.first).show(m_xstate,
+                                                      location.second);
+    } else {
+        m_tmux_mapping.workspace(location.first).show(m_xstate);
+    }
+    m_tmux_mapping.set_active_window(location.first);
+}
+
+void WMInstance::focus_active_pane(const TmuxLocation &location,
+                                   const bool redundant_refocus) {
+    const std::optional<TmuxLocation> active_location =
+        m_tmux_mapping.get_active();
+    xwmux::log_debug(std::format(
+        "Focusing active pane target=(@{}, %{}) current=({}, {}) redundant_refocus={}\n",
+        location.first, location.second,
+        active_location.has_value() ? active_location->first : -1,
+        active_location.has_value() ? active_location->second : -1,
+        redundant_refocus));
+
+    if (!active_location.has_value() || active_location.value() != location ||
+        redundant_refocus) {
+        const bool has_gui_window = m_tmux_mapping.is_filled(location);
+        const Window target =
+            has_gui_window ? m_tmux_mapping[location].get_window()
+                           : m_xstate.term.value_or(m_xstate.root);
+
+        xwmux::log_debug(std::format(
+            "Focusing active pane applying_focus has_gui_window={} target={}\n",
+            has_gui_window, static_cast<unsigned long>(target)));
+        if (has_gui_window) {
+            m_xstate.grab_prefix();
+        } else {
+            m_xstate.ungrab_prefix();
+        }
+        XSetInputFocus(m_xstate.display, target, 0, 0);
+        m_tmux_mapping.set_active_pane(location.second);
+    } else {
+        xwmux::log_debug(
+            "Focusing active pane skipping focus; location unchanged\n");
+    }
+}
+
 void WMInstance::apply_active_pane_with_focus(const TmuxPaneSnapshot &pane,
                                               const bool redundant_refocus) {
-    m_tmux_mapping.set_active(m_xstate, pane.location, pane.zoomed,
-                              redundant_refocus);
+    apply_active_workspace_visibility(pane.location, pane.zoomed);
+    focus_active_pane(pane.location, redundant_refocus);
 }
 
 void WMInstance::apply_active_pane_without_focus(const TmuxPaneSnapshot &pane) {
-    m_tmux_mapping.set_active_without_focus(m_xstate, pane.location,
-                                            pane.zoomed);
+    apply_active_workspace_visibility(pane.location, pane.zoomed);
+    m_tmux_mapping.set_active_pane(pane.location.second);
 }
 
 void WMInstance::update_overridden_active_focus(

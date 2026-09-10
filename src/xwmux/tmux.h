@@ -195,7 +195,12 @@ struct Workspace {
 struct TmuxXWindowMapping {
 
   public:
-    std::optional<TmuxLocation> get_active() const { return m_active; }
+    std::optional<TmuxLocation> get_active() const {
+        if (m_active.first < 0 || m_active.second < 0) {
+            return std::nullopt;
+        }
+        return m_active;
+    }
 
     Window current_window() const {
         return m_workspaces.at(m_active.first)[m_active.second].get_window();
@@ -283,21 +288,15 @@ struct TmuxXWindowMapping {
         return (*this)[{tm_window, tm_pane}];
     }
 
-    void set_active(XState &state, const TmuxLocation location,
-                    const bool zoomed = false,
-                    const bool redundant_refocus = false) {
-        activate_window(state, location.first,
-                        zoomed ? std::optional(location.second) : std::nullopt);
-        focus_pane(state, location, redundant_refocus);
+    Workspace &workspace(const TmuxWindowID tm_window) {
+        return m_workspaces[tm_window];
     }
 
-    void set_active_without_focus(const XState &state,
-                                  const TmuxLocation location,
-                                  const bool zoomed = false) {
-        activate_window(state, location.first,
-                        zoomed ? std::optional(location.second) : std::nullopt);
-        m_active = location;
+    void set_active_window(const TmuxWindowID tm_window) {
+        m_active.first = tm_window;
     }
+
+    void set_active_pane(const TmuxPaneID tm_pane) { m_active.second = tm_pane; }
 
     bool is_filled(const TmuxLocation location) const {
         return m_workspaces.count(location.first) &&
@@ -341,12 +340,6 @@ struct TmuxXWindowMapping {
     void override() { m_overriden = true; }
 
     void clear_override() { m_overriden = false; }
-
-    // Unsets the override flag and re-focuses the active window
-    void release_override(XState &state) {
-        clear_override();
-        focus_pane(state, m_active, true);
-    }
 
     bool overridden() const { return m_overriden; }
 
@@ -426,67 +419,6 @@ struct TmuxXWindowMapping {
     }
 
   private:
-    void activate_window(const XState &state, TmuxWindowID tm_window,
-                         std::optional<TmuxPaneID> zoomed_pane) {
-        xwmux::log_debug(std::format(
-            "TmuxXWindowMapping::activate_window target_window=@{} previous_active=({}, {}) zoomed_pane={}\n",
-            tm_window, m_active.first, m_active.second,
-            zoomed_pane.has_value() ? std::to_string(zoomed_pane.value())
-                                    : std::string("none")));
-        if (m_active.first != tm_window) {
-
-            // Deactivate old
-            if (m_active.first >= 0) {
-                m_workspaces[m_active.first].hide(state);
-            }
-        }
-
-        if (zoomed_pane.has_value()) {
-            m_workspaces[tm_window].show(state, zoomed_pane.value());
-        } else {
-            m_workspaces[tm_window].show(state);
-        }
-        m_active.first = tm_window;
-    }
-
-    // Clears override if switch takes place
-    // Grabs/ungrabs prefix as needed
-    void focus_pane(XState &state, const TmuxLocation location,
-                    bool redundant_refocus = false) {
-        xwmux::log_debug(std::format(
-            "TmuxXWindowMapping::focus_pane target=(@{}, %{}) current=(@{}, %{}) redundant_refocus={}\n",
-            location.first, location.second, m_active.first, m_active.second,
-            redundant_refocus));
-
-        if (m_active != location || redundant_refocus) {
-
-            // If workspace has gui window at location, focus it
-            bool has_x_window =
-                m_workspaces[location.first].get_windows().count(
-                    location.second);
-
-            Window target =
-                has_x_window
-                    ? m_workspaces[location.first][location.second].get_window()
-                    : state.term.value_or(state.root);
-
-            xwmux::log_debug(std::format(
-                "TmuxXWindowMapping::focus_pane applying_focus has_x_window={} target={}\n",
-                has_x_window, static_cast<unsigned long>(target)));
-
-            if (has_x_window) {
-                state.grab_prefix();
-            } else {
-                state.ungrab_prefix();
-            }
-
-            XSetInputFocus(state.display, target, 0, 0);
-            m_active.second = location.second;
-        } else {
-            xwmux::log_debug("TmuxXWindowMapping::focus_pane skipping focus; location unchanged\n");
-        }
-    }
-
     // Window mapping
     std::unordered_map<TmuxWindowID, Workspace> m_workspaces;
     std::unordered_map<TmuxPaneID, TmuxWindowID> m_inverse_tm_map;

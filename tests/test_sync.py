@@ -31,6 +31,32 @@ class SyncIntegrationTest(unittest.TestCase):
         )
         self.assertNotEqual(gui_pane["window"], terminal_window)
 
+    def test_sync_preserves_active_prefix_override(self):
+        gui_pane = self.harness.launch_and_wait_for_gui_pane(
+            title="xwmux-sync-prefix-override-test"
+        )
+        root_terminal = self.harness.root_terminal_window_id()
+
+        self.harness.send_key("ctrl+b")
+        self.harness.wait_for(
+            lambda: self.harness.focused_window_id() == root_terminal,
+            message="prefix did not focus the root terminal",
+        )
+        self.harness.wait_for(
+            self.harness.tmux_client_prefix_active,
+            message="prefix did not activate tmux prefix mode",
+        )
+
+        self.harness.wait_until_wm_synced()
+
+        state = self.harness.dump_state()
+        self.assertTrue(state["overridden"])
+        self.assertTrue(self.harness.tmux_client_prefix_active())
+        self.assertEqual(self.harness.focused_window_id(), root_terminal)
+        self.assertEqual(
+            self.harness.active_gui_pane(state)["x_window"], gui_pane["x_window"]
+        )
+
 
 if __name__ == "__main__":
     suite = unittest.defaultTestLoader.loadTestsFromTestCase(SyncIntegrationTest)

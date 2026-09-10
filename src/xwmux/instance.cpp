@@ -406,26 +406,23 @@ void WMInstance::handle_client_msg<MsgType::DUMP_STATE>(const Msg &msg) {
     write_state_json();
 }
 
-void WMInstance::maybe_attach_pending_window(const TmuxPaneSnapshot &pane) {
-    if (!should_attach_pending_window(pane)) {
-        return;
+std::optional<Window> WMInstance::take_pending_window() {
+    if (m_window_q.empty()) {
+        return std::nullopt;
     }
 
-    xwmux::log_debug(std::format(
-        "Refresh attaching_pending_window layout_initialized={} pending_queue_size={} target=(@{}, %{})\n",
-        m_layout_initialized, m_window_q.size(), pane.location.first,
-        pane.location.second));
-
-    Window window = m_window_q.front();
+    const Window window = m_window_q.front();
     m_window_q.pop();
+    return window;
+}
 
-    // Already destroyed or window already mapped, so kill the pane
-    // TODO: avoid WMInstance::adding to queue twice instead?
-    if (!m_pending_windows.count(window) || m_tmux_mapping.has_window(window)) {
-        m_tmux.kill_pane(pane.location.second);
-        return;
-    }
+bool WMInstance::can_attach_pending_window(const Window window) const {
+    return m_pending_windows.contains(window) &&
+           !m_tmux_mapping.has_window(window);
+}
 
+void WMInstance::attach_window_to_pane(const Window window,
+                                       const TmuxPaneSnapshot &pane) {
     xwmux::log_debug(std::format(
         "Refresh add_window window={} target=(@{}, %{})\n",
         static_cast<unsigned long>(window), pane.location.first,
@@ -436,12 +433,38 @@ void WMInstance::maybe_attach_pending_window(const TmuxPaneSnapshot &pane) {
             static_cast<unsigned long>(window), pane.location.first,
             pane.location.second));
     }
+
     m_tmux_mapping.add_window(window, pane.location);
     if (m_layout_initialized) {
         initialize_gui_geometry(window);
     }
     m_pending_windows.erase(window);
     name_client(window, pane.location.second);
+}
+
+void WMInstance::maybe_attach_pending_window(const TmuxPaneSnapshot &pane) {
+    if (!should_attach_pending_window(pane)) {
+        return;
+    }
+
+    xwmux::log_debug(std::format(
+        "Refresh attaching_pending_window layout_initialized={} pending_queue_size={} target=(@{}, %{})\n",
+        m_layout_initialized, m_window_q.size(), pane.location.first,
+        pane.location.second));
+
+    const std::optional<Window> window = take_pending_window();
+    if (!window.has_value()) {
+        return;
+    }
+
+    // Already destroyed or window already mapped, so kill the pane.
+    // TODO: avoid WMInstance::adding to queue twice instead?
+    if (!can_attach_pending_window(window.value())) {
+        m_tmux.kill_pane(pane.location.second);
+        return;
+    }
+
+    attach_window_to_pane(window.value(), pane);
 }
 
 bool WMInstance::is_same_active_location(const TmuxPaneSnapshot &pane) const {

@@ -234,6 +234,9 @@ class WMInstance {
                                         bool redundant_refocus);
     std::optional<WindowPosition>
     desired_gui_position(const TmuxPaneSnapshot &pane) const;
+    std::optional<Window> take_pending_window();
+    bool can_attach_pending_window(Window window) const;
+    void attach_window_to_pane(Window window, const TmuxPaneSnapshot &pane);
     void maybe_attach_pending_window(const TmuxPaneSnapshot &pane);
     void update_active_focus_from_pane(const TmuxPaneSnapshot &pane);
     void apply_pane_geometry(const TmuxPaneSnapshot &pane);

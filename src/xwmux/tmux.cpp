@@ -156,7 +156,7 @@ std::optional<TmuxSnapshot> TmuxClient::snapshot() const {
     const std::string command = std::format(
         "{} list-panes -a -F '{}'",
         base_command(),
-        "#{window_zoomed_flag} #{window_id} #{pane_id} #{pane_left} #{pane_top} #{pane_width} #{pane_height} #{pane_dead}");
+        "#{window_zoomed_flag} #{window_id} #{pane_id} #{pane_left} #{pane_top} #{pane_width} #{pane_height} #{pane_pid}");
     std::optional<std::string> output = capture(command);
     if (!output.has_value()) {
         xwmux::log_error("Failed to query tmux pane snapshot.\n");
@@ -179,10 +179,10 @@ std::optional<TmuxSnapshot> TmuxClient::snapshot() const {
         size_t pane_top = 0;
         size_t pane_width = 0;
         size_t pane_height = 0;
-        int pane_dead = 0;
+        int pane_pid = 0;
         if (!(fields >> window_zoomed >> window_id_text >> pane_id_text >>
               pane_left >> pane_top >> pane_width >> pane_height >>
-              pane_dead)) {
+              pane_pid)) {
             xwmux::log_error(
                 std::format("Failed to parse tmux pane snapshot line: {}\n", line));
             return std::nullopt;
@@ -205,7 +205,7 @@ std::optional<TmuxSnapshot> TmuxClient::snapshot() const {
             .focused = active_location.has_value() &&
                        active_location.value() == location,
             .zoomed = static_cast<bool>(window_zoomed),
-            .dead = static_cast<bool>(pane_dead),
+            .pane_pid = pane_pid,
         });
     }
 
@@ -214,8 +214,8 @@ std::optional<TmuxSnapshot> TmuxClient::snapshot() const {
                   if (lhs.focused != rhs.focused) {
                       return lhs.focused > rhs.focused;
                   }
-                  if (lhs.dead != rhs.dead) {
-                      return lhs.dead > rhs.dead;
+                  if ((lhs.pane_pid == 0) != (rhs.pane_pid == 0)) {
+                      return lhs.pane_pid == 0;
                   }
                   if (lhs.location.first != rhs.location.first) {
                       return lhs.location.first < rhs.location.first;

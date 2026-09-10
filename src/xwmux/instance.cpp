@@ -451,7 +451,8 @@ bool WMInstance::pane_has_gui_window(const TmuxPaneSnapshot &pane) const {
 
 bool WMInstance::should_attach_pending_window(
     const TmuxPaneSnapshot &pane) const {
-    return !m_window_q.empty() && !pane_has_gui_window(pane) && pane.dead;
+    return !m_window_q.empty() && !pane_has_gui_window(pane) &&
+           pane.pane_pid == 0;
 }
 
 bool WMInstance::needs_redundant_refocus(
@@ -540,9 +541,9 @@ void WMInstance::apply_pane_geometry(const TmuxPaneSnapshot &pane) {
 
 void WMInstance::apply_tmux_pane_snapshot(const TmuxPaneSnapshot &pane) {
     xwmux::log_debug(std::format(
-        "Applying tmux pane snapshot window=@{} pane=%{} focused={} zoomed={} dead={} pos=({},{})->({},{}) layout_initialized={} screen={}x{}\n",
+        "Applying tmux pane snapshot window=@{} pane=%{} focused={} zoomed={} pane_pid={} pos=({},{})->({},{}) layout_initialized={} screen={}x{}\n",
         pane.location.first, pane.location.second, pane.focused, pane.zoomed,
-        pane.dead, pane.position.start.x, pane.position.start.y,
+        pane.pane_pid, pane.position.start.x, pane.position.start.y,
         pane.position.end.x, pane.position.end.y, m_layout_initialized,
         m_xstate.resolution.x, m_xstate.resolution.y));
     m_tmux_mapping.move_pane(pane.location);

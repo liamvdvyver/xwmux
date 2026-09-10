@@ -28,7 +28,7 @@ struct TmuxPaneSnapshot {
     WindowPosition position;
     bool focused = false;
     bool zoomed = false;
-    bool dead = false;
+    int pane_pid = 0;
 };
 
 struct TmuxSnapshot {

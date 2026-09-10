@@ -4,6 +4,8 @@ The **X** **W**indow **Mu**ltiple**x**er
 
 Use tmux as your window manager.
 
+For implementation details, see the [architecture and event-flow documentation](docs/README.md).
+
 ## Requirements
 
 Requires `libX11`, and a c++ toolchain (including `cmake`) to build.

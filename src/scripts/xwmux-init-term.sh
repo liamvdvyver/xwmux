@@ -3,6 +3,7 @@
 # Register the dimensions (rows/columns) of the current terminal for layout calculation.
 
 session_name="default"
+HOOK_NO=69
 
 resolve_target_session() {
     state_json=$(xwmux-ctl dump-state 2>/dev/null || true)
@@ -56,6 +57,28 @@ else
     }
 fi
 
+configure_tmux_hooks() {
+    tmux_cmd set-hook -g after-split-window[$HOOK_NO]     'run-shell "xwmux-ctl refresh"'
+    tmux_cmd set-hook -g pane-exited[$HOOK_NO]            'run-shell "xwmux-ctl refresh"'
+    tmux_cmd set-hook -g window-pane-changed[$HOOK_NO]    'run-shell "xwmux-ctl refresh"'
+    tmux_cmd set-hook -g client-session-changed[$HOOK_NO] 'run-shell "xwmux-ctl refresh"'
+    tmux_cmd set-hook -g session-window-changed[$HOOK_NO] 'run-shell "xwmux-ctl refresh"'
+    tmux_cmd set-hook -g after-select-window[$HOOK_NO]    'run-shell "xwmux-ctl refresh"'
+    tmux_cmd set-hook -g after-new-window[$HOOK_NO]       'run-shell "xwmux-ctl refresh"'
+    tmux_cmd set-hook -g after-new-session[$HOOK_NO]      'run-shell "xwmux-ctl refresh"'
+    tmux_cmd set-hook -g client-attached[$HOOK_NO]        'run-shell "xwmux-ctl refresh"'
+    tmux_cmd set-hook -g after-resize-pane[$HOOK_NO]      'run-shell "xwmux-ctl refresh"'
+    tmux_cmd set-hook -g after-select-layout[$HOOK_NO]    'run-shell "xwmux-ctl refresh"'
+    tmux_cmd set-hook -g pane-focus-in[$HOOK_NO]          'run-shell "xwmux-ctl refresh"'
+    tmux_cmd set-hook -g after-kill-pane[$HOOK_NO]        'run-shell "xwmux-ctl kill-pane orphans && xwmux-ctl refresh"'
+    tmux_cmd set -g focus-events on
+}
+
+if [ "${1:-}" = "--configure-hooks" ]; then
+    configure_tmux_hooks
+    exit 0
+fi
+
 # BEGIN VIBECODED SECTION
 
 # Query terminal for pixel size and text grid size
@@ -103,6 +126,10 @@ stty "$old"
 if ! tmux_cmd list-sessions >/dev/null 2>&1; then
     tmux_cmd new-session -d -s "$session_name"
 fi
+
+# These hooks belong to the tmux server, so install them for every root
+# terminal startup. Indexed hooks make repeated initialization idempotent.
+configure_tmux_hooks
 
 status=$(tmux_cmd show-options -g status | cut -f 2 -d ' ')
 if [ "$status" = "off" ]; then

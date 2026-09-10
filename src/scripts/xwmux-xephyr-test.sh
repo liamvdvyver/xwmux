@@ -22,7 +22,6 @@ BUILD_DIR="$ROOT_DIR/build"
 SCRIPTS_DIR="$ROOT_DIR/src/scripts"
 XWMUX_BIN="$BUILD_DIR/xwmux"
 CTL_BIN="$BUILD_DIR/xwmux-ctl"
-HOOKS_SCRIPT="$SCRIPTS_DIR/xwmux-tmux-conf.sh"
 TMUX_CONF="$SCRIPTS_DIR/xwmux-test.tmux.conf"
 
 export PATH="$BUILD_DIR:$SCRIPTS_DIR:$PATH"
@@ -125,7 +124,6 @@ fi
 export DISPLAY="$XEPHYR_DISPLAY"
 
 tmux -f "$TMUX_CONF" -S "$XWMUX_TMUX_SOCKET" new-session -d -s default
-"$HOOKS_SCRIPT"
 
 echo "Starting xwmux test instance"
 echo "  HOST_DISPLAY=$HOST_DISPLAY"

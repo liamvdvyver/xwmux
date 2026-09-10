@@ -19,14 +19,14 @@ Requires `tmux`, `xorg` server, and one of the following terminals to run:
 ## Installation
 
 * Run `cmake . && sudo make install`
-* Add the following line to your `tmux.conf`: `run-shell 'xwmux-tmux-conf.sh'`
 * Ensure your terminal is configured to use zero padding/borders on the
   top-left.
 
-If you want xwmux to talk to a specific tmux server, export
-`XWMUX_TMUX_SOCKET` before starting xwmux and before running the tmux hook
-script. When set, xwmux and its helper scripts use `tmux -S "$XWMUX_TMUX_SOCKET" ...`
-instead of the default tmux server.
+No tmux configuration is required: the root-terminal initializer installs the
+required hooks on the tmux server when xwmux starts. If you use a dedicated
+tmux server, export `XWMUX_TMUX_SOCKET` before starting xwmux. When set,
+xwmux and its helper scripts use `tmux -S "$XWMUX_TMUX_SOCKET" ...` instead of
+the default tmux server.
 
 ## Usage
 
@@ -78,10 +78,13 @@ xwmux reads the following tmux options from the connected tmux server:
 
 ### Hooks
 
-`xwmux-tmux-conf.sh` installs the tmux hooks xwmux needs in order to track pane
-focus, pane creation/destruction, window changes, and layout updates.
-Run it against the same tmux server as xwmux; if `XWMUX_TMUX_SOCKET` is set,
-it will configure that server.
+The root-terminal initializer installs the tmux hooks xwmux needs to track pane
+focus, pane creation/destruction, window changes, and layout updates. It also
+enables tmux `focus-events`. No `~/.tmux.conf` changes are needed.
+
+`xwmux-tmux-conf.sh` remains as a compatibility entry point for existing
+configurations; it only registers those same hooks and is not needed for new
+installations.
 
 ### Test launcher
 

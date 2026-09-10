@@ -158,10 +158,37 @@ Only after the direct regression passes should `tests/test_prefix.py` replace it
 
 The behavior assertion must remain; sync should replace an arbitrary readiness delay, not replace correctness checks.
 
+## Investigation results
+
+The direct prefix-then-sync regression was added in `tests/test_sync.py` and passes:
+
+1. focus a GUI pane;
+2. activate tmux prefix mode;
+3. perform a sync-triggered duplicate refresh;
+4. verify terminal focus, tmux prefix state, and the GUI mapping remain intact.
+
+Therefore, a duplicate refresh alone does not break a stable prefix override.
+
+A split-specific headless experiment produced a different result:
+
+1. launch/focus a GUI pane;
+2. run `tmux split-window -h -d`;
+3. wait for sync acknowledgment;
+4. send the first prefix and then `!` immediately.
+
+Measured behavior:
+
+- 0 ms and 50 ms delay before the first prefix: `!` was lost;
+- approximately 200 ms or more: the command succeeded.
+
+Verbose WM logs showed one real race: a delayed refresh from the split can arrive just after xwmux has focused the terminal for prefix handling, while tmux still reports `client_prefix=0`. That refresh clears the override and refocuses the GUI.
+
+A speculative local retry for this `client_prefix` propagation race was tested but reverted. It fixed runs containing that delayed refresh, yet other runs still lost the *first* simulated prefix before a refresh could intervene. The problem is therefore broader than duplicate-refresh handling: after split/focus churn, the terminal/tmux client is sometimes not ready to accept the programmatically injected prefix key.
+
 ## Current status
 
 - Snapshot refresh, adjacent refresh coalescing, and the sync acknowledgment are implemented.
-- The harness has sync helpers and an integration test for a tmux window switch.
-- The full headless suite passes with 20 tests.
+- The harness has sync helpers, a window-switch integration test, and a prefix-override duplicate-refresh regression test.
+- The full headless suite passes with 21 tests.
 - Prefix tests still retain their existing sleep.
-- The next code change should be the direct prefix-then-refresh regression test, not a speculative focus-policy rewrite.
+- The next investigation should target terminal/tmux input readiness or replace the programmatic tmux prefix injection with delivery of a real key event to the newly focused terminal.

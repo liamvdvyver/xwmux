@@ -218,6 +218,10 @@ class WMInstance {
                                  bool same_active_location) const;
     void maybe_clear_forced_refocus(const TmuxPaneSnapshot &pane,
                                     bool same_active_location);
+    void show_window(WindowPane &pane);
+    void hide_window(WindowPane &pane);
+    void request_window_close(Window window);
+    void initialize_gui_geometry(Window window);
     void apply_active_workspace_visibility(const TmuxLocation &location,
                                            bool zoomed);
     void focus_active_pane(const TmuxLocation &location,

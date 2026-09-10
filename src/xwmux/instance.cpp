@@ -123,7 +123,7 @@ void WMInstance::remove_orphaned_windows(const TmuxSnapshot &snapshot) {
         xwmux::log_debug(std::format(
             "Refresh removing orphaned window={}\n",
             static_cast<unsigned long>(orphan)));
-        m_tmux_mapping.kill_client(orphan, m_xstate.display);
+        request_window_close(orphan);
         m_tmux_mapping.remove_window(m_tmux, orphan, false);
     }
 }
@@ -371,7 +371,7 @@ void WMInstance::handle_client_msg<MsgType::KILL_PANE>(const Msg &msg) {
         }
         w = m_tmux_mapping.current_window();
     }
-    m_tmux_mapping.kill_client(w, m_xstate.display);
+    request_window_close(w);
     m_tmux_mapping.remove_window(m_tmux, w);
     // Pane should be killed normally on unmap notify.
 }
@@ -381,7 +381,7 @@ void WMInstance::handle_client_msg<MsgType::KILL_ORPHANS>(const Msg &msg) {
     (void)msg;
     xwmux::log_debug("Handling IPC: KILL_ORPHANS\n");
     for (Window w : m_tmux_mapping.find_orphans(m_tmux)) {
-        m_tmux_mapping.kill_client(w, m_xstate.display);
+        request_window_close(w);
         m_tmux_mapping.remove_window(m_tmux, w, false);
     }
 }
@@ -436,8 +436,10 @@ void WMInstance::maybe_attach_pending_window(const TmuxPaneSnapshot &pane) {
             static_cast<unsigned long>(window), pane.location.first,
             pane.location.second));
     }
-    m_tmux_mapping.add_window(m_xstate, window, pane.location,
-                              m_layout_initialized);
+    m_tmux_mapping.add_window(window, pane.location);
+    if (m_layout_initialized) {
+        initialize_gui_geometry(window);
+    }
     m_pending_windows.erase(window);
     name_client(window, pane.location.second);
 }
@@ -471,6 +473,38 @@ void WMInstance::maybe_clear_forced_refocus(const TmuxPaneSnapshot &pane,
     }
 }
 
+void WMInstance::show_window(WindowPane &pane) {
+    XMapWindow(m_xstate.display, pane.get_window());
+    pane.mark_shown();
+}
+
+void WMInstance::hide_window(WindowPane &pane) {
+    XUnmapWindow(m_xstate.display, pane.get_window());
+    pane.mark_hidden();
+}
+
+void WMInstance::request_window_close(const Window window) {
+    if (!m_tmux_mapping.begin_close(window)) {
+        return;
+    }
+
+    XEvent ev{};
+    ev.xclient.type = ClientMessage;
+    ev.xclient.window = window;
+    ev.xclient.message_type =
+        XInternAtom(m_xstate.display, "WM_PROTOCOLS", true);
+    ev.xclient.format = 32;
+    ev.xclient.data.l[0] =
+        XInternAtom(m_xstate.display, "WM_DELETE_WINDOW", false);
+    ev.xclient.data.l[1] = CurrentTime;
+    XSendEvent(m_xstate.display, window, False, NoEventMask, &ev);
+}
+
+void WMInstance::initialize_gui_geometry(const Window window) {
+    m_xstate.term_layout.fullscreen_term_position().resize_to(m_xstate.display,
+                                                              window);
+}
+
 void WMInstance::apply_active_workspace_visibility(
     const TmuxLocation &location, const bool zoomed) {
     const std::optional<TmuxLocation> active_location =
@@ -484,14 +518,20 @@ void WMInstance::apply_active_workspace_visibility(
 
     if (active_location.has_value() &&
         active_location->first != location.first) {
-        m_tmux_mapping.workspace(active_location->first).hide(m_xstate);
+        for (auto &[pane_id, window_pane] :
+             m_tmux_mapping.workspace(active_location->first).get_windows()) {
+            (void)pane_id;
+            hide_window(window_pane);
+        }
     }
 
-    if (zoomed) {
-        m_tmux_mapping.workspace(location.first).show(m_xstate,
-                                                      location.second);
-    } else {
-        m_tmux_mapping.workspace(location.first).show(m_xstate);
+    for (auto &[pane_id, window_pane] :
+         m_tmux_mapping.workspace(location.first).get_windows()) {
+        if (zoomed && pane_id != location.second) {
+            hide_window(window_pane);
+        } else {
+            show_window(window_pane);
+        }
     }
     m_tmux_mapping.set_active_window(location.first);
 }
@@ -597,7 +637,8 @@ void WMInstance::apply_pane_geometry(const TmuxPaneSnapshot &pane) {
         return;
     }
 
-    m_tmux_mapping[pane.location].set_position(m_xstate, gui_position.value());
+    gui_position.value().resize_to(m_xstate.display,
+                                   m_tmux_mapping[pane.location].get_window());
 }
 
 void WMInstance::apply_tmux_pane_snapshot(const TmuxPaneSnapshot &pane) {

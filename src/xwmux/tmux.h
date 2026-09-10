@@ -88,36 +88,19 @@ struct WindowPane {
 
     void notify_unmapped() { m_unmap_req_count--; }
 
-    void show(const XState &state) {
-        XMapWindow(state.display, m_window);
-        m_hidden = false;
-    }
+    void mark_shown() { m_hidden = false; }
 
-    void kill_client(Display *display) {
-        if (m_dying)
-            return;
-        m_dying = true;
-
-        // Close window
-        // https://nachtimwald.com/2009/11/08/sending-wm_delete_window-client-messages/
-        XEvent ev;
-        ev.xclient.type = ClientMessage;
-        ev.xclient.window = m_window;
-        ev.xclient.message_type = XInternAtom(display, "WM_PROTOCOLS", true);
-        ev.xclient.format = 32;
-        ev.xclient.data.l[0] = XInternAtom(display, "WM_DELETE_WINDOW", false);
-        ev.xclient.data.l[1] = CurrentTime;
-        XSendEvent(display, m_window, False, NoEventMask, &ev);
-    }
-
-    void hide(const XState &state) {
-        XUnmapWindow(state.display, m_window);
+    void mark_hidden() {
         m_hidden = true;
         m_unmap_req_count++;
     }
 
-    void set_position(const XState &state, const WindowPosition &pos) {
-        pos.resize_to(state.display, m_window);
+    bool begin_close() {
+        if (m_dying) {
+            return false;
+        }
+        m_dying = true;
+        return true;
     }
 
   private:
@@ -138,14 +121,8 @@ struct Workspace {
   public:
     Workspace() = default;
 
-    void add_window(const XState &state, const TmuxPaneID tm_pane,
-                    const Window window,
-                    const bool initialize_geometry = true) {
+    void add_window(const TmuxPaneID tm_pane, const Window window) {
         m_app_windows[tm_pane] = window;
-        if (initialize_geometry) {
-            state.term_layout.fullscreen_term_position().resize_to(
-                state.display, window);
-        }
     }
 
     void erase_pane(const TmuxPaneID tm_pane) {
@@ -162,30 +139,12 @@ struct Workspace {
         return m_app_windows.at(tm_window);
     }
 
-    const std::unordered_map<TmuxPaneID, WindowPane> &get_windows() const {
+    std::unordered_map<TmuxPaneID, WindowPane> &get_windows() {
         return m_app_windows;
     }
 
-    void show(const XState &state) {
-        for (auto &[p, w] : m_app_windows) {
-            w.show(state);
-        }
-    }
-
-    void show(const XState &state, const TmuxPaneID zoomed) {
-        for (auto &[p, w] : m_app_windows) {
-            if (p == zoomed) {
-                w.show(state);
-            } else {
-                w.hide(state);
-            }
-        }
-    }
-
-    void hide(const XState &state) {
-        for (auto &[p, w] : m_app_windows) {
-            w.hide(state);
-        }
+    const std::unordered_map<TmuxPaneID, WindowPane> &get_windows() const {
+        return m_app_windows;
     }
 
   private:
@@ -214,11 +173,8 @@ struct TmuxXWindowMapping {
         return m_workspaces.at(m_active.first);
     }
 
-    void add_window(const XState &state, const Window window,
-                    const TmuxLocation location,
-                    const bool initialize_geometry = true) {
-        m_workspaces[location.first].add_window(state, location.second, window,
-                                                initialize_geometry);
+    void add_window(const Window window, const TmuxLocation location) {
+        m_workspaces[location.first].add_window(location.second, window);
         m_inverse_map[window] = location.second;
         m_inverse_tm_map[location.second] = location.first;
     }
@@ -330,10 +286,8 @@ struct TmuxXWindowMapping {
         return m_workspaces.at(w)[p].is_hidden();
     }
 
-    void kill_client(const Window window, Display *display) {
-        TmuxPaneID p = m_inverse_map.at(window);
-        TmuxWindowID w = m_inverse_tm_map.at(p);
-        return m_workspaces.at(w)[p].kill_client(display);
+    bool begin_close(const Window window) {
+        return get(window).begin_close();
     }
 
     // Sets the override flag

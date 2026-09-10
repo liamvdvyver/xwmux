@@ -129,9 +129,16 @@ void WMInstance::remove_orphaned_windows(const TmuxSnapshot &snapshot) {
 }
 
 void WMInstance::apply_snapshot_panes(const TmuxSnapshot &snapshot) {
-    for (const TmuxPaneSnapshot &pane : snapshot.panes) {
-        apply_tmux_pane_snapshot(pane);
+    // Phase 2a: update mapping membership before visibility/focus decisions.
+    move_snapshot_panes(snapshot);
+
+    // Phase 2b: attachment and focus are defined only for the focused pane.
+    if (const TmuxPaneSnapshot *pane = focused_snapshot_pane(snapshot)) {
+        apply_focused_snapshot_pane(*pane);
     }
+
+    // Phase 2c: apply geometry after the mapping is fully reconciled.
+    apply_snapshot_geometry(snapshot);
 }
 
 void WMInstance::refresh_from_tmux_snapshot() {
@@ -664,21 +671,43 @@ void WMInstance::apply_pane_geometry(const TmuxPaneSnapshot &pane) {
                                    m_tmux_mapping[pane.location].get_window());
 }
 
-void WMInstance::apply_tmux_pane_snapshot(const TmuxPaneSnapshot &pane) {
-    xwmux::log_debug(std::format(
-        "Applying tmux pane snapshot window=@{} pane=%{} focused={} zoomed={} pane_pid={} pos=({},{})->({},{}) layout_initialized={} screen={}x{}\n",
-        pane.location.first, pane.location.second, pane.focused, pane.zoomed,
-        pane.pane_pid, pane.position.start.x, pane.position.start.y,
-        pane.position.end.x, pane.position.end.y, m_layout_initialized,
-        m_xstate.resolution.x, m_xstate.resolution.y));
-    m_tmux_mapping.move_pane(pane.location);
-
-    if (pane.focused) {
-        maybe_attach_pending_window(pane);
-        update_active_focus_from_pane(pane);
+void WMInstance::move_snapshot_panes(const TmuxSnapshot &snapshot) {
+    for (const TmuxPaneSnapshot &pane : snapshot.panes) {
+        xwmux::log_debug(std::format(
+            "Refresh moving pane window=@{} pane=%{}\n", pane.location.first,
+            pane.location.second));
+        m_tmux_mapping.move_pane(pane.location);
     }
+}
 
-    apply_pane_geometry(pane);
+const TmuxPaneSnapshot *
+WMInstance::focused_snapshot_pane(const TmuxSnapshot &snapshot) const {
+    for (const TmuxPaneSnapshot &pane : snapshot.panes) {
+        if (pane.focused) {
+            return &pane;
+        }
+    }
+    return nullptr;
+}
+
+void WMInstance::apply_focused_snapshot_pane(const TmuxPaneSnapshot &pane) {
+    xwmux::log_debug(std::format(
+        "Refresh applying focused pane window=@{} pane=%{} zoomed={} pane_pid={}\n",
+        pane.location.first, pane.location.second, pane.zoomed, pane.pane_pid));
+    maybe_attach_pending_window(pane);
+    update_active_focus_from_pane(pane);
+}
+
+void WMInstance::apply_snapshot_geometry(const TmuxSnapshot &snapshot) {
+    for (const TmuxPaneSnapshot &pane : snapshot.panes) {
+        xwmux::log_debug(std::format(
+            "Refresh applying geometry window=@{} pane=%{} pos=({},{})->({},{}) layout_initialized={} screen={}x{}\n",
+            pane.location.first, pane.location.second, pane.position.start.x,
+            pane.position.start.y, pane.position.end.x, pane.position.end.y,
+            m_layout_initialized, m_xstate.resolution.x,
+            m_xstate.resolution.y));
+        apply_pane_geometry(pane);
+    }
 }
 
 template <>

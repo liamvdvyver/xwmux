@@ -240,7 +240,11 @@ class WMInstance {
     void maybe_attach_pending_window(const TmuxPaneSnapshot &pane);
     void update_active_focus_from_pane(const TmuxPaneSnapshot &pane);
     void apply_pane_geometry(const TmuxPaneSnapshot &pane);
-    void apply_tmux_pane_snapshot(const TmuxPaneSnapshot &pane);
+    void move_snapshot_panes(const TmuxSnapshot &snapshot);
+    const TmuxPaneSnapshot *focused_snapshot_pane(
+        const TmuxSnapshot &snapshot) const;
+    void apply_focused_snapshot_pane(const TmuxPaneSnapshot &pane);
+    void apply_snapshot_geometry(const TmuxSnapshot &snapshot);
 
     //--- Client message handlers --------------------------------------------//
 

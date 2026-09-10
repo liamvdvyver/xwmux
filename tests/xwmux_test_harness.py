@@ -594,6 +594,16 @@ class XwmuxTestHarness:
         except AssertionError:
             return False
 
+    def window_position(self, window_id):
+        """Return the ``(x, y)`` position of an X window in the nested display."""
+        output = subprocess.check_output(
+            ["xdotool", "getwindowgeometry", "--shell", str(window_id)],
+            env=self.test_env,
+            text=True,
+        )
+        values = dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
+        return int(values["X"]), int(values["Y"])
+
     def window_size(self, window_id):
         """Return ``(width, height)`` for an X window in the nested display."""
         output = subprocess.check_output(

@@ -65,6 +65,33 @@ class SyncIntegrationTest(unittest.TestCase):
             self.harness.active_gui_pane(state)["x_window"], gui_pane["x_window"]
         )
 
+    def test_window_layout_hook_repositions_moved_gui_pane(self):
+        gui_pane = self.harness.launch_and_wait_for_gui_pane(
+            title="xwmux-sync-move-pane-position-test"
+        )
+        self.harness.tmux("split-window", "-h", "-d")
+        panes = self.harness.wait_for(
+            lambda: panes if len(panes := self.harness.list_panes()) >= 3 else None,
+            message="tmux did not create the destination pane",
+        )
+        destination = next(
+            pane for pane in panes
+            if pane["window"] == gui_pane["window"] and pane["pane"] != gui_pane["pane"]
+        )
+        self.harness.wait_until_wm_synced()
+        old_position = self.harness.window_position(gui_pane["x_window"])
+
+        self.harness.tmux(
+            "swap-pane", "-d", "-s", f"%{gui_pane['pane']}", "-t", f"%{destination['pane']}"
+        )
+
+        self.harness.wait_for(
+            lambda: self.harness.window_position(gui_pane["x_window"])
+            if self.harness.window_position(gui_pane["x_window"]) != old_position
+            else None,
+            message="moving the GUI pane did not update its X window position",
+        )
+
     def test_sync_preserves_active_prefix_override(self):
         gui_pane = self.harness.launch_and_wait_for_gui_pane(
             title="xwmux-sync-prefix-override-test"

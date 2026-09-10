@@ -22,6 +22,8 @@ class InitHooksIntegrationTest(unittest.TestCase):
 
         for hook in [
             "after-split-window",
+            "window-linked",
+            "window-unlinked",
             "after-kill-pane",
             "after-new-window",
             "after-select-window",
@@ -33,6 +35,10 @@ class InitHooksIntegrationTest(unittest.TestCase):
         self.assertIn(
             'after-kill-pane[69] run-shell "xwmux-ctl kill-pane orphans && xwmux-ctl refresh"',
             hooks,
+        )
+        self.assertIn(
+            'window-layout-changed[69] run-shell "xwmux-ctl refresh"',
+            self.harness.tmux("show-hooks", "-g", "window-layout-changed"),
         )
         self.assertNotIn("xwmux-report.sh", hooks)
         self.assertEqual(self.harness.tmux("show-options", "-g", "focus-events").strip(), "focus-events on")

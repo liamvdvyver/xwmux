@@ -50,6 +50,7 @@ class XwmuxTestHarness:
         self.processes = []
         self.action_log = deque(maxlen=200)
         self.launcher_logs = deque(maxlen=400)
+        self._sync_sequence = 0
 
     @staticmethod
     def require_program(name):
@@ -72,7 +73,7 @@ class XwmuxTestHarness:
         if not XWMUX_CTL.exists():
             raise RuntimeError(f"missing binary: {XWMUX_CTL}")
 
-        for program in ["xmessage", "xdotool", "tmux", "python3", "xterm", "xwininfo", "Xephyr"]:
+        for program in ["xmessage", "xdotool", "xprop", "tmux", "python3", "xterm", "xwininfo", "Xephyr"]:
             XwmuxTestHarness.require_program(program)
 
     def _record_action(self, action, details=None):
@@ -310,6 +311,36 @@ class XwmuxTestHarness:
             env=self.test_env,
             text=True,
         )
+
+    def wm_sync_sequence(self):
+        """Return the last sequence acknowledged by xwmux, or ``None``."""
+        output = self._safe_command_output(["xprop", "-root", "-notype", "_XW_SYNC_SEQ"])
+        if "=" not in output:
+            return None
+        try:
+            return int(output.rsplit("=", 1)[1].strip())
+        except ValueError:
+            return None
+
+    def wait_until_wm_synced(self, timeout=10):
+        """Request a refresh barrier and wait for xwmux to acknowledge it."""
+        self._sync_sequence += 1
+        sequence = self._sync_sequence
+        self._record_action("sync", {"sequence": sequence})
+        self._run_command([str(XWMUX_CTL), "sync", str(sequence)])
+        return self.wait_for(
+            lambda: sequence if (acknowledged := self.wm_sync_sequence()) is not None
+            and acknowledged >= sequence else None,
+            timeout=timeout,
+            interval=0.02,
+            message=f"xwmux did not acknowledge sync sequence {sequence}",
+        )
+
+    def tmux_and_wait(self, *args, timeout=10):
+        """Run an isolated tmux command, then wait for a reconciled WM snapshot."""
+        output = self.tmux(*args)
+        self.wait_until_wm_synced(timeout=timeout)
+        return output
 
     def list_panes(self):
         """Return a simple parsed view of tmux panes across all windows."""

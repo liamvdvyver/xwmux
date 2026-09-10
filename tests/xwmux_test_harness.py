@@ -7,6 +7,7 @@ tracking child processes created by a test, and providing small utilities for
 observing xwmux state through both tmux and X11-facing tools.
 """
 
+import atexit
 import json
 import os
 import select
@@ -16,6 +17,7 @@ import sys
 import tempfile
 import threading
 import time
+import weakref
 from collections import deque
 from pathlib import Path
 
@@ -26,6 +28,40 @@ SCRIPTS_DIR = ROOT / "src" / "scripts"
 LAUNCHER = SCRIPTS_DIR / "xwmux-xephyr-test.sh"
 XWMUX_CTL = BUILD_DIR / "xwmux-ctl"
 TTY_KEY_LOGGER = ROOT / "tests" / "tty_key_logger.py"
+
+
+# A test may be interrupted before unittest reaches tearDown().  Keep only
+# explicit harness instances (never process-name matches) so those launchers
+# still receive their normal, ownership-scoped cleanup path.
+_ACTIVE_HARNESSES = weakref.WeakSet()
+
+
+def _stop_active_harnesses():
+    for harness in list(_ACTIVE_HARNESSES):
+        try:
+            harness.stop()
+        except Exception:  # pragma: no cover - best effort during shutdown
+            pass
+
+
+atexit.register(_stop_active_harnesses)
+_PREVIOUS_SIGNAL_HANDLERS = {}
+
+
+def _cleanup_on_signal(signum, frame):
+    _stop_active_harnesses()
+    previous = _PREVIOUS_SIGNAL_HANDLERS[signum]
+    if callable(previous):
+        previous(signum, frame)
+    if previous is signal.SIG_IGN:
+        return
+    signal.signal(signum, signal.SIG_DFL)
+    os.kill(os.getpid(), signum)
+
+
+for _signal in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+    _PREVIOUS_SIGNAL_HANDLERS[_signal] = signal.getsignal(_signal)
+    signal.signal(_signal, _cleanup_on_signal)
 
 
 class XWindowTreeError(RuntimeError):
@@ -48,6 +84,7 @@ class XwmuxTestHarness:
         self.launcher_log_thread = None
         self.test_env = None
         self.processes = []
+        self.temp_paths = []
         self.action_log = deque(maxlen=200)
         self.launcher_logs = deque(maxlen=400)
         self._sync_sequence = 0
@@ -66,14 +103,12 @@ class XwmuxTestHarness:
     @staticmethod
     def check_prerequisites():
         """Validate that the current environment can run integration tests."""
-        if "DISPLAY" not in os.environ:
-            XwmuxTestHarness.require_program("Xvfb")
         if not LAUNCHER.exists():
             raise RuntimeError(f"missing launcher: {LAUNCHER}")
         if not XWMUX_CTL.exists():
             raise RuntimeError(f"missing binary: {XWMUX_CTL}")
 
-        for program in ["xmessage", "xdotool", "xprop", "tmux", "python3", "xterm", "xwininfo", "Xephyr"]:
+        for program in ["Xvfb", "xmessage", "xdotool", "xprop", "tmux", "python3", "xterm", "xwininfo", "Xephyr"]:
             XwmuxTestHarness.require_program(program)
 
     def _record_action(self, action, details=None):
@@ -94,7 +129,15 @@ class XwmuxTestHarness:
         Returns a dict parsed from launcher startup output. The most important
         keys are ``DISPLAY`` and ``XWMUX_TMUX_SOCKET``.
         """
+        if self.launcher is not None:
+            raise RuntimeError("test harness is already running")
+
         launcher_env = os.environ.copy()
+        # The launcher always starts Xvfb, but also remove session selectors
+        # from every child it starts.  This makes accidental use of a caller's
+        # desktop or tmux server impossible even if a script regresses.
+        for name in ("DISPLAY", "XAUTHORITY", "TMUX", "XWMUX_TMUX_SOCKET"):
+            launcher_env.pop(name, None)
         launcher_env["PATH"] = f"{BUILD_DIR}:{SCRIPTS_DIR}:{launcher_env.get('PATH', '')}"
 
         launcher_cmd = [str(LAUNCHER)]
@@ -109,22 +152,29 @@ class XwmuxTestHarness:
             text=True,
             bufsize=1,
             env=launcher_env,
+            # This is a private process group.  stop() may only signal this
+            # group, never a process selected by name or the caller's group.
             start_new_session=True,
         )
+        _ACTIVE_HARNESSES.add(self)
 
-        startup = self._read_startup_env()
-        self.test_env = launcher_env.copy()
-        self.test_env["DISPLAY"] = startup["DISPLAY"]
-        self.test_env["XWMUX_TMUX_SOCKET"] = startup["XWMUX_TMUX_SOCKET"]
-        self._record_action("startup-env", startup)
+        try:
+            startup = self._read_startup_env()
+            self.test_env = launcher_env.copy()
+            self.test_env["DISPLAY"] = startup["DISPLAY"]
+            self.test_env["XWMUX_TMUX_SOCKET"] = startup["XWMUX_TMUX_SOCKET"]
+            self._record_action("startup-env", startup)
 
-        self.launcher_log_thread = threading.Thread(
-            target=self._forward_launcher_logs,
-            daemon=True,
-        )
-        self.launcher_log_thread.start()
-
-        return startup
+            self.launcher_log_thread = threading.Thread(
+                target=self._forward_launcher_logs,
+                daemon=True,
+            )
+            self.launcher_log_thread.start()
+            return startup
+        except BaseException:
+            # setUp() does not call tearDown() when start() itself fails.
+            self.stop()
+            raise
 
     def _forward_launcher_logs(self):
         """Capture launcher output after startup, optionally mirroring to stderr."""
@@ -141,26 +191,32 @@ class XwmuxTestHarness:
         """Terminate all test-owned processes and shut down xwmux cleanly."""
         self._record_action("stop")
         for proc in reversed(self.processes):
-            proc.terminate()
-            try:
-                proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait(timeout=2)
+            self._terminate_process_group(proc)
         self.processes.clear()
+        for path in self.temp_paths:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+        self.temp_paths.clear()
 
         if self.test_env is not None:
             subprocess.run([str(XWMUX_CTL), "exit"], env=self.test_env,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         if self.launcher is not None:
+            # This is the launcher's private session; SIGTERM reaches a stuck
+            # xwmux child as well as the shell, whose EXIT trap performs the
+            # explicit PID/socket cleanup. It can never include the caller.
             try:
                 os.killpg(self.launcher.pid, signal.SIGTERM)
             except ProcessLookupError:
                 pass
 
             try:
-                self.launcher.wait(timeout=5)
+                # The launcher gives each recorded child a bounded graceful
+                # shutdown window before removing its private runtime dir.
+                self.launcher.wait(timeout=20)
             except subprocess.TimeoutExpired:
                 try:
                     os.killpg(self.launcher.pid, signal.SIGKILL)
@@ -171,6 +227,28 @@ class XwmuxTestHarness:
         if self.launcher_log_thread is not None:
             self.launcher_log_thread.join(timeout=1)
             self.launcher_log_thread = None
+
+        self.launcher = None
+        self.test_env = None
+        _ACTIVE_HARNESSES.discard(self)
+
+    @staticmethod
+    def _terminate_process_group(proc):
+        """Stop a tracked helper and descendants in its own process group."""
+        if proc.poll() is not None:
+            return
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            proc.wait(timeout=2)
 
     def _read_startup_env(self):
         """Read launcher stdout until nested DISPLAY and tmux socket are known."""
@@ -203,7 +281,7 @@ class XwmuxTestHarness:
             if line.startswith("  ") and "=" in line:
                 key, value = line.strip().split("=", 1)
                 startup[key] = value
-                if "DISPLAY" in startup and "XWMUX_TMUX_SOCKET" in startup:
+                if {"HOST_DISPLAY", "DISPLAY", "XWMUX_TMUX_SOCKET", "STARTED_XVFB"} <= startup.keys():
                     return startup
 
         raise RuntimeError("timed out waiting for launcher startup output")
@@ -254,6 +332,9 @@ class XwmuxTestHarness:
             env=self.test_env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            # Keep helper descendants out of the test runner's process group
+            # so cleanup can address precisely this helper tree.
+            start_new_session=True,
         )
         self.processes.append(proc)
         return proc
@@ -292,13 +373,17 @@ class XwmuxTestHarness:
         passthrough is implemented with XTEST and xterm is supported on that
         path.
         """
-        log_path = Path(tempfile.mkstemp(prefix="xwmux-keylog.", suffix=".bin")[1])
+        log_fd, log_path_text = tempfile.mkstemp(prefix="xwmux-keylog.", suffix=".bin")
+        os.close(log_fd)
+        log_path = Path(log_path_text)
+        self.temp_paths.append(log_path)
         self._record_action("launch-key-logger", {"title": title, "log_path": str(log_path)})
         proc = subprocess.Popen(
             ["kitty", "--name", title, "-e", "python3", str(TTY_KEY_LOGGER), str(log_path)],
             env=self.test_env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            start_new_session=True,
         )
         self.processes.append(proc)
         return proc, log_path

@@ -28,18 +28,21 @@ Expected binaries after build:
 
 ## Preferred test paths
 
-Run the integration suite:
+Run integration tests only with the safe invocation (including focused runs):
 
 ```bash
-python3 tests/run_all.py
+env -u DISPLAY -u XAUTHORITY -u TMUX -u XWMUX_TMUX_SOCKET python3 tests/run_all.py
 ```
-
-Run a focused test:
 
 ```bash
-python3 tests/test_dump_state.py
-python3 tests/test_prefix.py
+env -u DISPLAY -u XAUTHORITY -u TMUX -u XWMUX_TMUX_SOCKET python3 tests/test_dump_state.py
+env -u DISPLAY -u XAUTHORITY -u TMUX -u XWMUX_TMUX_SOCKET python3 tests/test_prefix.py
 ```
+
+The harness also strips these variables from its launcher and always creates
+its own Xvfb parent display. Never run GUI tests against the developer's
+`DISPLAY`, use `pkill`/`killall`, or run tmux cleanup without the harness's
+private socket.
 
 ## Headless test environment
 

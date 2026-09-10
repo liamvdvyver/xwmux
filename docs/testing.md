@@ -10,17 +10,17 @@ From the repository root:
 ```sh
 cmake -S . -B build
 cmake --build build -j"$(nproc)"
-python3 tests/run_all.py
+env -u DISPLAY -u XAUTHORITY -u TMUX -u XWMUX_TMUX_SOCKET python3 tests/run_all.py
 ```
 
 If dependencies are unavailable, enter the Nix development environment first
 (`nix develop`). Focused integration tests include:
 
 ```sh
-python3 tests/test_dump_state.py
-python3 tests/test_prefix.py
-python3 tests/test_sync.py
-python3 tests/test_focus.py
+env -u DISPLAY -u XAUTHORITY -u TMUX -u XWMUX_TMUX_SOCKET python3 tests/test_dump_state.py
+env -u DISPLAY -u XAUTHORITY -u TMUX -u XWMUX_TMUX_SOCKET python3 tests/test_prefix.py
+env -u DISPLAY -u XAUTHORITY -u TMUX -u XWMUX_TMUX_SOCKET python3 tests/test_sync.py
+env -u DISPLAY -u XAUTHORITY -u TMUX -u XWMUX_TMUX_SOCKET python3 tests/test_focus.py
 ```
 
 The tests skip when their headless prerequisites are not available.
@@ -28,10 +28,21 @@ The tests skip when their headless prerequisites are not available.
 ## Harness model
 
 `tests/xwmux_test_harness.py` starts `src/scripts/xwmux-xephyr-test.sh`, which
-creates a unique tmux socket, launches a clean dedicated tmux server with
-`src/scripts/xwmux-test.tmux.conf`, and starts xwmux in a nested display. The
-harness exposes the nested environment, can create GUI windows and send keys
-with `xdotool`, and queries tmux through that dedicated socket.
+always starts a private Xvfb display and puts Xephyr inside it; it never uses
+the caller's `DISPLAY`, so Xephyr cannot appear on the developer's desktop.
+It also creates a unique tmux socket and runtime directory, launches a clean
+dedicated tmux server with `src/scripts/xwmux-test.tmux.conf`, and starts
+xwmux in the nested display. The harness strips inherited X/tmux session
+selectors before launch, exposes only the nested environment, can create GUI
+windows and send keys with `xdotool`, and queries tmux through that dedicated
+socket.
+
+Cleanup is ownership-scoped: the launcher terminates only its recorded Xvfb,
+Xephyr, and xwmux child PIDs, and kills tmux only via its freshly-created
+socket. The harness owns a separate launcher process group, terminates that
+specific group (with SIGKILL fallback), and cleans active harnesses on normal
+exit and SIGINT/SIGTERM/SIGHUP. There is no `pkill`, `killall`, display-based
+process matching, or unnamed tmux cleanup.
 
 Useful observations are deliberately from separate layers:
 

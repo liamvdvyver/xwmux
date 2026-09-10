@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# Start a completely private X and tmux environment for integration tests.
+# Do not use the caller's DISPLAY: doing so would make Xephyr visible on the
+# developer's desktop.
 set -eu
 
 VERBOSE=0
@@ -25,6 +28,10 @@ CTL_BIN="$BUILD_DIR/xwmux-ctl"
 TMUX_CONF="$SCRIPTS_DIR/xwmux-test.tmux.conf"
 
 export PATH="$BUILD_DIR:$SCRIPTS_DIR:$PATH"
+# In particular, do not let a nested command discover the developer's tmux
+# client through its environment.  Every test tmux command uses the socket
+# below.
+unset DISPLAY XAUTHORITY TMUX XWMUX_TMUX_SOCKET
 
 if [ ! -x "$XWMUX_BIN" ] || [ ! -x "$CTL_BIN" ]; then
     echo "Missing built binaries in $BUILD_DIR" >&2
@@ -37,15 +44,12 @@ if [ ! -f "$TMUX_CONF" ]; then
     exit 1
 fi
 
-if ! command -v Xephyr >/dev/null 2>&1; then
-    echo "Xephyr not found in PATH" >&2
-    exit 1
-fi
-
-if ! command -v tmux >/dev/null 2>&1; then
-    echo "tmux not found in PATH" >&2
-    exit 1
-fi
+for program in Xvfb Xephyr tmux; do
+    if ! command -v "$program" >/dev/null 2>&1; then
+        echo "$program not found in PATH" >&2
+        exit 1
+    fi
+done
 
 find_free_display() {
     display_num=100
@@ -55,62 +59,87 @@ find_free_display() {
     echo ":${display_num}"
 }
 
-HOST_DISPLAY=${DISPLAY:-}
-STARTED_XVFB=0
-if [ -z "$HOST_DISPLAY" ]; then
-    if ! command -v Xvfb >/dev/null 2>&1; then
-        echo "DISPLAY is not set and Xvfb not found in PATH" >&2
-        exit 1
-    fi
+# All cleanup targets below are either children started by this script or a
+# tmux server addressed through this freshly-created, private socket path.
+RUNTIME_DIR=$(mktemp -d "${TMPDIR:-/tmp}/xwmux-xephyr.XXXXXX")
+chmod 700 "$RUNTIME_DIR"
+export XWMUX_TMUX_SOCKET="$RUNTIME_DIR/tmux.sock"
+XWMUX_PID=""
+TMUX_PID=""
+XEPHYR_PID=""
+XVFB_PID=""
+CLEANUP_DONE=0
 
-    HOST_DISPLAY=$(find_free_display)
-    Xvfb "$HOST_DISPLAY" -screen 0 1280x800x24 -ac &
-    XVFB_PID=$!
-    STARTED_XVFB=1
-
+terminate_child() {
+    pid=$1
+    [ -n "$pid" ] || return 0
+    kill -TERM "$pid" 2>/dev/null || true
     for _ in $(seq 1 50); do
-        if [ -e "/tmp/.X11-unix/X${HOST_DISPLAY#:}" ]; then
-            break
+        # A direct child may already be a zombie while its shell has not yet
+        # reaped it. kill -0 succeeds for zombies, so reap instead of spending
+        # the whole timeout and being killed before remaining cleanup runs.
+        if ! kill -0 "$pid" 2>/dev/null || ps -o stat= -p "$pid" 2>/dev/null | grep -q 'Z'; then
+            wait "$pid" 2>/dev/null || true
+            return 0
         fi
         sleep 0.1
     done
-
-    if [ ! -e "/tmp/.X11-unix/X${HOST_DISPLAY#:}" ]; then
-        echo "Xvfb did not start on $HOST_DISPLAY" >&2
-        exit 1
-    fi
-fi
-
-RUNTIME_DIR=$(mktemp -d "${TMPDIR:-/tmp}/xwmux-xephyr.XXXXXX")
-export XWMUX_TMUX_SOCKET="$RUNTIME_DIR/tmux.sock"
-XEPHYR_DISPLAY=$(find_free_display)
+    kill -KILL "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+}
 
 cleanup() {
+    [ "$CLEANUP_DONE" -eq 0 ] || return 0
+    CLEANUP_DONE=1
     set +e
-    if [ -n "${XWMUX_PID:-}" ]; then
-        kill "$XWMUX_PID" 2>/dev/null || true
-        wait "$XWMUX_PID" 2>/dev/null || true
-    fi
+    terminate_child "$XWMUX_PID"
+    # This is deliberately socket-addressed, never a server-name or process
+    # name lookup, so an interactive tmux server cannot be selected.
     if [ -S "$XWMUX_TMUX_SOCKET" ]; then
         tmux -S "$XWMUX_TMUX_SOCKET" kill-server 2>/dev/null || true
     fi
-    if [ -n "${XEPHYR_PID:-}" ]; then
-        kill "$XEPHYR_PID" 2>/dev/null || true
-        wait "$XEPHYR_PID" 2>/dev/null || true
-    fi
-    if [ -n "${XVFB_PID:-}" ]; then
-        kill "$XVFB_PID" 2>/dev/null || true
-        wait "$XVFB_PID" 2>/dev/null || true
-    fi
+    # tmux daemonizes into its own session, so it is not necessarily in the
+    # launcher's process group.  This PID was queried from our private socket.
+    terminate_child "$TMUX_PID"
+    terminate_child "$XEPHYR_PID"
+    terminate_child "$XVFB_PID"
     rm -rf "$RUNTIME_DIR"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 
-DISPLAY="$HOST_DISPLAY" Xephyr "$XEPHYR_DISPLAY" -screen 1280x800 -ac +xinerama &
+# Always create a private headless parent display, even if the caller has a
+# DISPLAY.  Xephyr is therefore never mapped on the caller's desktop.
+HOST_DISPLAY=$(find_free_display)
+Xvfb "$HOST_DISPLAY" -screen 0 1280x800x24 -ac -nolisten tcp &
+XVFB_PID=$!
+
+for _ in $(seq 1 50); do
+    if [ -e "/tmp/.X11-unix/X${HOST_DISPLAY#:}" ]; then
+        break
+    fi
+    if ! kill -0 "$XVFB_PID" 2>/dev/null; then
+        break
+    fi
+    sleep 0.1
+done
+
+if [ ! -e "/tmp/.X11-unix/X${HOST_DISPLAY#:}" ]; then
+    echo "Xvfb did not start on $HOST_DISPLAY" >&2
+    exit 1
+fi
+
+XEPHYR_DISPLAY=$(find_free_display)
+DISPLAY="$HOST_DISPLAY" Xephyr "$XEPHYR_DISPLAY" -screen 1280x800 -ac +xinerama -nolisten tcp &
 XEPHYR_PID=$!
 
 for _ in $(seq 1 50); do
     if [ -e "/tmp/.X11-unix/X${XEPHYR_DISPLAY#:}" ]; then
+        break
+    fi
+    if ! kill -0 "$XEPHYR_PID" 2>/dev/null; then
         break
     fi
     sleep 0.1
@@ -122,15 +151,15 @@ if [ ! -e "/tmp/.X11-unix/X${XEPHYR_DISPLAY#:}" ]; then
 fi
 
 export DISPLAY="$XEPHYR_DISPLAY"
-
 tmux -f "$TMUX_CONF" -S "$XWMUX_TMUX_SOCKET" new-session -d -s default
+TMUX_PID=$(tmux -S "$XWMUX_TMUX_SOCKET" display-message -p '#{pid}')
 
 echo "Starting xwmux test instance"
 echo "  HOST_DISPLAY=$HOST_DISPLAY"
 echo "  DISPLAY=$DISPLAY"
 echo "  XWMUX_TMUX_SOCKET=$XWMUX_TMUX_SOCKET"
 echo "  TMUX_CONF=$TMUX_CONF"
-echo "  STARTED_XVFB=$STARTED_XVFB"
+echo "  STARTED_XVFB=1"
 if [ -n "${XWMUX_TERMINAL:-}" ]; then
     echo "  XWMUX_TERMINAL=$XWMUX_TERMINAL"
 fi

@@ -17,11 +17,16 @@ constexpr Atom state_json_atom(Display *dpy) {
     return XInternAtom(dpy, "_XW_STATE_JSON", 0);
 }
 
+constexpr Atom sync_sequence_atom(Display *dpy) {
+    return XInternAtom(dpy, "_XW_SYNC_SEQ", 0);
+}
+
 enum class MsgType {
     RESOLUTION,
     PREFIX,
     EXIT,
     REFRESH,
+    SYNC,
     KILL_PANE,
     KILL_ORPHANS,
     DUMP_STATE
@@ -37,6 +42,8 @@ constexpr Atom msg_type_atom(Display *dpy, const MsgType type) {
         return XInternAtom(dpy, "_XW_EXIT", 0);
     case MsgType::REFRESH:
         return XInternAtom(dpy, "_XW_REFRESH", 0);
+    case MsgType::SYNC:
+        return XInternAtom(dpy, "_XW_SYNC", 0);
     case MsgType::KILL_PANE:
         return XInternAtom(dpy, "_XW_KILL_PANE", 0);
     case MsgType::KILL_ORPHANS:
@@ -98,6 +105,12 @@ struct Msg {
         return Msg(dpy, MsgType::DUMP_STATE);
     }
 
+    constexpr static Msg sync(Display *const dpy, const long sequence) {
+        Msg ret(dpy, MsgType::SYNC);
+        ret.sync_sequence() = sequence;
+        return ret;
+    }
+
     // Layout definition/accessors
 
     // Pane positions
@@ -126,6 +139,9 @@ struct Msg {
     const long &keycode() const { return m_ev.xclient.data.l[0]; }
     long &mods() { return m_ev.xclient.data.l[1]; }
     const long &mods() const { return m_ev.xclient.data.l[1]; }
+
+    long &sync_sequence() { return m_ev.xclient.data.l[0]; }
+    const long &sync_sequence() const { return m_ev.xclient.data.l[0]; }
 
     // Other accessors
 

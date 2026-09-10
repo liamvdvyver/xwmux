@@ -1,4 +1,6 @@
 #include <chrono>
+#include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <memory>
@@ -119,6 +121,29 @@ struct Refresh : Command {
     }
 };
 
+struct Sync : Command {
+    std::string keyword() const override { return "sync"; }
+    std::string usage_suffix() const override { return " <sequence>"; }
+    std::string description() const override {
+        return "Refresh xwmux and acknowledge the sequence on the root window.";
+    }
+    std::optional<Msg> parse(int argc, char **argv, int cur,
+                             Display *dpy) override {
+        if (cur + 1 != argc - 1) {
+            return std::nullopt;
+        }
+
+        char *end = nullptr;
+        errno = 0;
+        const long sequence = std::strtol(argv[cur + 1], &end, 10);
+        if (errno != 0 || end == argv[cur + 1] || *end != '\0' ||
+            sequence < 0) {
+            return std::nullopt;
+        }
+        return Msg::sync(dpy, sequence);
+    }
+};
+
 struct DumpState : Command {
     std::string keyword() const override { return "dump-state"; }
     std::string usage_suffix() const override { return ""; }
@@ -195,6 +220,8 @@ std::unique_ptr<Command> parse_cmd(std::string cmd) {
         return std::make_unique<Exit>();
     } else if (cmd == Refresh().keyword()) {
         return std::make_unique<Refresh>();
+    } else if (cmd == Sync().keyword()) {
+        return std::make_unique<Sync>();
     } else if (cmd == DumpState().keyword()) {
         return std::make_unique<DumpState>();
     } else if (cmd == KillPane().keyword()) {
@@ -208,7 +235,7 @@ void print_general_help(std::ostream &out) {
     out << "Commands:\n";
 
     const Command *commands[] = {
-        new Exit(), new Refresh(), new DumpState(), new KillPane(),
+        new Exit(), new Refresh(), new Sync(), new DumpState(), new KillPane(),
         new InitLayout(), new InitPrefix(),
     };
 

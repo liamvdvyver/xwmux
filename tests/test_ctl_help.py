@@ -29,6 +29,7 @@ class XwmuxCtlHelpTest(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("Usage: xwmux-ctl <command> [args]", proc.stdout)
         self.assertIn("xwmux-ctl exit", proc.stdout)
+        self.assertIn("xwmux-ctl sync <sequence>", proc.stdout)
         self.assertIn("xwmux-ctl dump-state", proc.stdout)
         self.assertIn("xwmux-ctl kill-pane", proc.stdout)
 

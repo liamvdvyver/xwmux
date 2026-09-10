@@ -50,6 +50,9 @@ std::string msg_type_name(Display *display, const Atom atom) {
     if (atom == msg_type_atom(display, MsgType::REFRESH)) {
         return "REFRESH";
     }
+    if (atom == msg_type_atom(display, MsgType::SYNC)) {
+        return "SYNC";
+    }
     if (atom == msg_type_atom(display, MsgType::KILL_PANE)) {
         return "KILL_PANE";
     }
@@ -74,6 +77,9 @@ std::string msg_summary(Display *display, const Msg &msg,
     if (ev.message_type == msg_type_atom(display, MsgType::PREFIX)) {
         return std::format("{} keycode={} mods={}", type, msg.keycode(),
                            msg.mods());
+    }
+    if (ev.message_type == msg_type_atom(display, MsgType::SYNC)) {
+        return std::format("{} sequence={}", type, msg.sync_sequence());
     }
     if (ev.message_type == msg_type_atom(display, MsgType::KILL_PANE)) {
         return std::format("{} pane=%{}", type, msg.tm_pane());
@@ -154,6 +160,16 @@ void WMInstance::refresh_from_tmux_snapshot() {
 
     // Phase 2: apply pane-driven mapping/focus/geometry updates.
     apply_snapshot_panes(snapshot.value());
+}
+
+void WMInstance::acknowledge_sync(const long sequence) {
+    const unsigned long acknowledged = static_cast<unsigned long>(sequence);
+    XChangeProperty(m_xstate.display, m_xstate.root,
+                    sync_sequence_atom(m_xstate.display), XA_CARDINAL, 32,
+                    PropModeReplace,
+                    reinterpret_cast<const unsigned char *>(&acknowledged), 1);
+    xwmux::log_debug(
+        std::format("Acknowledged sync sequence={}\n", sequence));
 }
 
 template <>
@@ -404,6 +420,14 @@ void WMInstance::handle_client_msg<MsgType::REFRESH>(const Msg &msg) {
     (void)msg;
     xwmux::log_debug("Handling IPC: REFRESH (unexpected direct dispatch)\n");
     refresh_from_tmux_snapshot();
+}
+
+template <>
+void WMInstance::handle_client_msg<MsgType::SYNC>(const Msg &msg) {
+    xwmux::log_debug(
+        std::format("Handling IPC: SYNC sequence={}\n", msg.sync_sequence()));
+    refresh_from_tmux_snapshot();
+    acknowledge_sync(msg.sync_sequence());
 }
 
 template <>
@@ -728,6 +752,9 @@ void WMInstance::handle_x_event<ClientMessage>(XClientMessageEvent &ev) {
     } else if (ev.message_type ==
                msg_type_atom(m_xstate.display, MsgType::REFRESH)) {
         handle_client_msg<MsgType::REFRESH>(msg);
+    } else if (ev.message_type ==
+               msg_type_atom(m_xstate.display, MsgType::SYNC)) {
+        handle_client_msg<MsgType::SYNC>(msg);
     } else if (ev.message_type ==
                msg_type_atom(m_xstate.display, MsgType::KILL_PANE)) {
         handle_client_msg<MsgType::KILL_PANE>(msg);

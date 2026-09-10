@@ -594,6 +594,9 @@ For ad hoc investigation, use the existing harness in `tests/xwmux_test_harness.
 - Moved X11 map/unmap, resize, close-client, and initial-geometry effects from mapping/workspace types into `WMInstance`.
 - Split pending-window attachment into queue consumption, eligibility, and attachment helpers.
 - Updated pending-pane detection for newer tmux versions: attachment now uses `pane_pid == 0` instead of `pane_dead`.
+- Phased snapshot reconciliation into pane movement, focused-pane attachment/focus, and geometry passes.
+- Added `SYNC(sequence)` IPC and `_XW_SYNC_SEQ` root-property acknowledgments. A sync request performs a full refresh before acknowledging its sequence.
+- Added harness helpers `wait_until_wm_synced()` and `tmux_and_wait(...)`, plus sync integration coverage.
 - Separated part of refresh decision logic from side effects with helper extractions for:
   - active-location comparison
   - redundant-refocus decisions
@@ -610,11 +613,10 @@ For ad hoc investigation, use the existing harness in `tests/xwmux_test_harness.
 - `WMInstance` has improved structure, but responsibility is still too centralized.
 - `TmuxXWindowMapping` is now substantially model-oriented, but its ownership/API can be simplified further.
 
-### Not started yet
-- Sync / sequence numbers in the IPC protocol.
-- Test-harness explicit sync helpers.
+### In progress / not complete
+- Sync acknowledgments exist, but they are not yet a complete causal barrier for delayed tmux hook processes. Do not use them to replace prefix readiness waits until a later duplicate hook-triggered refresh is demonstrably harmless.
 - A broader explicit attachment phase that preserves current prefix/focus semantics.
-- Test migration away from polling/sleeps once a sync barrier exists.
+- Test migration away from polling/sleeps once sync is robust against delayed hook-triggered refreshes.
 
 ### Important note
 A previous attempt to move pending-window attachment into a separate broader refresh pre-pass changed behavior and broke prefix-related tests. That change was reverted. Future attachment-phase cleanup should proceed carefully and preserve current prefix/focus semantics.
@@ -624,15 +626,12 @@ A previous attempt to move pending-window attachment into a separate broader ref
 The safest next step remains a **behavior-preserving internal refactor of the refresh path**, not a semantic change.
 
 Recommended target:
-- split snapshot application into explicit reconciliation phases:
-  1. move mapped panes
-  2. identify the focused pane
-  3. attach/focus only that pane under the current policy
-  4. apply geometry to all mapped panes
+- reproduce delayed hook refreshes after a sync
+- ensure an unchanged snapshot does not disturb an active prefix override or focus target
 - avoid changing attachment policy yet
 - avoid changing prefix behavior yet
 
-That makes the ordering guarantee explicit before sync treats completed refresh as a barrier.
+A delayed duplicate hook refresh must be harmless before sync can safely be treated as a full causal barrier.
 
 ## Success criteria for the refresh refactor phase
 
@@ -646,30 +645,21 @@ This phase is successful when:
 - focused integration tests pass
 - code/event flow is simpler and easier to reason about than before
 
-## Path to sync (estimated 4–6 commits)
+## Path to robust sync (estimated 2–4 commits remaining)
 
-The estimate assumes each step remains behavior-preserving until the barrier is introduced.
+1. **Make duplicate refreshes prefix/focus harmless** (next investigation/fix)
+   - Reproduce delayed hook refreshes after a sync.
+   - Ensure an unchanged snapshot does not disturb an active prefix override or focus target.
 
-1. **Phase refresh pane reconciliation** (next commit)
-   - Make movement, focused-pane attachment/focus, and geometry distinct passes.
-   - Preserve the current focused/unbound/zero-PID attachment policy.
-
-2. **Stabilize attachment invariants** (one or two commits, only if needed)
+2. **Stabilize attachment invariants** (zero or one commit, only if needed)
    - Make queue cleanup/attachment ordering explicit.
-   - Add targeted regression coverage if a safe deterministic attachment phase is possible.
    - Do not broaden attachment policy without prefix/focus regression guards.
 
-3. **Add WM sync acknowledgment** (one commit)
-   - Add `SYNC(sequence)` IPC.
-   - After processing preceding events and any requested refresh, publish the acknowledged sequence to a root-window property.
-   - Keep the WM single-threaded; sync is an event-loop barrier, not a hook counter.
-
-4. **Add harness sync helpers** (one commit)
-   - Add helpers such as `wait_until_wm_synced()` and `tmux_and_wait(...)`.
-   - Wait for the root property to reach the requested sequence.
-
-5. **Migrate timing-sensitive tests** (one commit)
-   - Replace polling/sleeps where the action can be followed by a sync barrier.
+3. **Migrate timing-sensitive tests** (after step 1)
+   - Replace polling/sleeps where the action can be followed by the robust barrier.
    - Start with prefix/session-switching tests; retain condition-based checks for the state being asserted.
 
-An optional final cleanup commit can simplify the remaining mapping APIs and remove obsolete test waits. Therefore the practical expectation is **4 commits minimum, 5 typical, 6 if attachment cleanup needs its own guarded step**.
+4. **Optional cleanup**
+   - Simplify remaining mapping APIs and remove obsolete test waits.
+
+The IPC acknowledgment and harness helpers are complete. The remaining work is making the barrier robust against delayed duplicate hook-triggered refreshes, then adopting it in timing-sensitive tests.

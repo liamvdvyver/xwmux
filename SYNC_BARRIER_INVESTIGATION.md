@@ -183,12 +183,21 @@ Measured behavior:
 
 Verbose WM logs showed one real race: a delayed refresh from the split can arrive just after xwmux has focused the terminal for prefix handling, while tmux still reports `client_prefix=0`. That refresh clears the override and refocuses the GUI.
 
-A speculative local retry for this `client_prefix` propagation race was tested but reverted. It fixed runs containing that delayed refresh, yet other runs still lost the *first* simulated prefix before a refresh could intervene. The problem is therefore broader than duplicate-refresh handling: after split/focus churn, the terminal/tmux client is sometimes not ready to accept the programmatically injected prefix key.
+A speculative local retry for this `client_prefix` propagation race was tested and reverted. It fixed runs containing that delayed refresh, yet other runs still lost the *first* programmatically injected prefix before a refresh could intervene.
+
+The final fix was to stop using `tmux send-keys -K` for the captured prefix. xwmux's prefix grab is synchronous, so it now:
+
+1. changes X focus to the terminal (or back to the GUI for double prefix);
+2. synchronizes that focus request;
+3. calls `XAllowEvents(..., ReplayKeyboard, ...)`.
+
+`ReplayKeyboard` replays the original captured X key event exactly once to its new focus target. This is preferable to injecting a second XTEST key chord: it avoids duplicate input and preserves the complete original modifier/key event. The double-prefix GUI path now also receives the proper control byte (`0x02`) instead of the old `XSendEvent` plain `b` behavior.
+
+The split/sync/immediate-prefix regression now passes without a sleep.
 
 ## Current status
 
 - Snapshot refresh, adjacent refresh coalescing, and the sync acknowledgment are implemented.
-- The harness has sync helpers, a window-switch integration test, and a prefix-override duplicate-refresh regression test.
-- The full headless suite passes with 21 tests.
-- Prefix tests still retain their existing sleep.
-- The next investigation should target terminal/tmux input readiness or replace the programmatic tmux prefix injection with delivery of a real key event to the newly focused terminal.
+- The harness has sync helpers, a window-switch integration test, a prefix-override duplicate-refresh regression test, and a split/sync/immediate-prefix regression test.
+- Prefix tests use `wait_until_wm_synced()` instead of their former two-second sleep.
+- The full headless suite passes with 22 tests.

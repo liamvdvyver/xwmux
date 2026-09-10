@@ -597,6 +597,8 @@ For ad hoc investigation, use the existing harness in `tests/xwmux_test_harness.
 - Phased snapshot reconciliation into pane movement, focused-pane attachment/focus, and geometry passes.
 - Added `SYNC(sequence)` IPC and `_XW_SYNC_SEQ` root-property acknowledgments. A sync request performs a full refresh before acknowledging its sequence.
 - Added harness helpers `wait_until_wm_synced()` and `tmux_and_wait(...)`, plus sync integration coverage.
+- Replayed captured prefix keys with `ReplayKeyboard` after changing focus, replacing out-of-band `tmux send-keys -K` and the double-prefix `XSendEvent` path.
+- Replaced the timing-sensitive prefix test sleep with `wait_until_wm_synced()`.
 - Separated part of refresh decision logic from side effects with helper extractions for:
   - active-location comparison
   - redundant-refocus decisions
@@ -614,9 +616,8 @@ For ad hoc investigation, use the existing harness in `tests/xwmux_test_harness.
 - `TmuxXWindowMapping` is now substantially model-oriented, but its ownership/API can be simplified further.
 
 ### In progress / not complete
-- Sync acknowledgments exist, but they are not yet a complete causal barrier for delayed tmux hook processes. Do not use them to replace prefix readiness waits until a later duplicate hook-triggered refresh is demonstrably harmless.
 - A broader explicit attachment phase that preserves current prefix/focus semantics.
-- Test migration away from polling/sleeps once sync is robust against delayed hook-triggered refreshes.
+- Migrate other applicable polling/sleeps to the sync barrier.
 
 ### Important note
 A previous attempt to move pending-window attachment into a separate broader refresh pre-pass changed behavior and broke prefix-related tests. That change was reverted. Future attachment-phase cleanup should proceed carefully and preserve current prefix/focus semantics.
@@ -626,12 +627,9 @@ A previous attempt to move pending-window attachment into a separate broader ref
 The safest next step remains a **behavior-preserving internal refactor of the refresh path**, not a semantic change.
 
 Recommended target:
-- reproduce delayed hook refreshes after a sync
-- ensure an unchanged snapshot does not disturb an active prefix override or focus target
-- avoid changing attachment policy yet
-- avoid changing prefix behavior yet
-
-A delayed duplicate hook refresh must be harmless before sync can safely be treated as a full causal barrier.
+- identify other timing-sensitive tests that can use the sync barrier
+- keep attachment policy unchanged while its invariants are clarified
+- continue reducing remaining mapping/WM ownership overlap
 
 ## Success criteria for the refresh refactor phase
 
@@ -645,21 +643,17 @@ This phase is successful when:
 - focused integration tests pass
 - code/event flow is simpler and easier to reason about than before
 
-## Path to robust sync (estimated 2–4 commits remaining)
+## Path after robust sync (estimated 2–4 commits remaining)
 
-1. **Make duplicate refreshes prefix/focus harmless** (next investigation/fix)
-   - Reproduce delayed hook refreshes after a sync.
-   - Ensure an unchanged snapshot does not disturb an active prefix override or focus target.
-
-2. **Stabilize attachment invariants** (zero or one commit, only if needed)
+1. **Stabilize attachment invariants** (zero or one commit, only if needed)
    - Make queue cleanup/attachment ordering explicit.
    - Do not broaden attachment policy without prefix/focus regression guards.
 
-3. **Migrate timing-sensitive tests** (after step 1)
+2. **Migrate timing-sensitive tests**
    - Replace polling/sleeps where the action can be followed by the robust barrier.
    - Start with prefix/session-switching tests; retain condition-based checks for the state being asserted.
 
-4. **Optional cleanup**
+3. **Optional cleanup**
    - Simplify remaining mapping APIs and remove obsolete test waits.
 
-The IPC acknowledgment and harness helpers are complete. The remaining work is making the barrier robust against delayed duplicate hook-triggered refreshes, then adopting it in timing-sensitive tests.
+The IPC acknowledgment, harness helpers, and prefix input replay are complete. The remaining work is adopting the barrier where useful and continuing the structural reconciliation cleanup.

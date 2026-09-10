@@ -69,11 +69,10 @@ pane killing, pane naming, prefix-state query, and Escape delivery.
 
 ## Snapshot data used by the WM
 
-For each refresh, `TmuxClient::snapshot()` obtains the active location from:
-
-```sh
-tmux display-message -p '#{window_id} #{pane_id}'
-```
+For each refresh, `TmuxClient::snapshot()` obtains the active location from
+`list-clients`, using the most recently active client. This also succeeds while
+there are no attached clients during a detach/reattach transition; in that
+case the snapshot has no focused pane.
 
 It obtains every pane from `list-panes -a` with these fields:
 

@@ -129,19 +129,32 @@ bool TmuxClient::find_pane(const TmuxPaneID tm_pane) const {
 }
 
 std::optional<TmuxSnapshot> TmuxClient::snapshot() const {
+    // `display-message` needs a current client and fails while the root
+    // terminal is between detach and reattach. list-clients succeeds with no
+    // clients and its format is evaluated in each client's context.
     std::optional<TmuxLocation> active_location;
-    if (const std::optional<std::string> active_output = capture(std::format(
-            "{} display-message -p '{}'", base_command(),
-            "#{window_id} #{pane_id}"));
-        active_output.has_value()) {
-        std::istringstream active_fields(active_output.value());
-        std::string window_id_text;
-        std::string pane_id_text;
-        if (active_fields >> window_id_text >> pane_id_text &&
-            window_id_text.size() >= 2 && window_id_text[0] == '@' &&
-            pane_id_text.size() >= 2 && pane_id_text[0] == '%') {
-            active_location = {std::stoi(window_id_text.substr(1)),
-                               std::stoi(pane_id_text.substr(1))};
+    if (const std::optional<std::string> clients = capture(std::format(
+            "{} list-clients -F '{}'", base_command(),
+            "#{client_activity} #{window_id} #{pane_id}"));
+        clients.has_value()) {
+        std::istringstream lines(clients.value());
+        std::string line;
+        long long newest_activity = -1;
+        while (std::getline(lines, line)) {
+            std::istringstream fields(line);
+            long long activity = 0;
+            std::string window_id_text;
+            std::string pane_id_text;
+            if (!(fields >> activity >> window_id_text >> pane_id_text) ||
+                window_id_text.size() < 2 || window_id_text[0] != '@' ||
+                pane_id_text.size() < 2 || pane_id_text[0] != '%') {
+                continue;
+            }
+            if (activity > newest_activity) {
+                newest_activity = activity;
+                active_location = {std::stoi(window_id_text.substr(1)),
+                                   std::stoi(pane_id_text.substr(1))};
+            }
         }
     }
 

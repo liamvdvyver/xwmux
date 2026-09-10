@@ -207,6 +207,39 @@ class SessionSwitchingIntegrationTest(unittest.TestCase):
             message="reattaching after detach did not show the alt session GUI",
         )
 
+    def test_detaching_without_pane_changes_preserves_the_active_gui_pane(self):
+        gui_pane = self.harness.launch_and_wait_for_gui_pane(
+            title="xwmux-detach-snapshot-gui"
+        )
+
+        # Detaching briefly leaves tmux without a current client while xwmux
+        # replaces the root terminal. A snapshot must still be readable.
+        self.harness.tmux("detach-client")
+
+        self.harness.wait_for(
+            lambda: self.harness.root_terminal_window_id(),
+            message="root terminal was not restored after detaching from tmux",
+        )
+        self.harness.wait_for_state(
+            lambda state: state.get("active")
+            == {"window": gui_pane["window"], "pane": gui_pane["pane"]},
+            message="detaching without pane changes lost the active tmux pane",
+        )
+        self._wait_for_gui_hidden_state(
+            gui_pane,
+            False,
+            message="detaching without pane changes hid the active GUI pane",
+        )
+        self.harness.wait_for(
+            lambda: self.harness.focused_window_id() == gui_pane["x_window"],
+            message="detaching without pane changes did not restore GUI focus",
+        )
+        self.assertFalse(
+            any("Failed to query tmux pane snapshot" in line
+                for line in self.harness.launcher_logs),
+            "detaching caused xwmux to fail its tmux snapshot query",
+        )
+
     def test_switching_back_to_original_session_restores_original_gui_focus(self):
         default_gui = self.harness.launch_and_wait_for_gui_pane(
             title="xwmux-session-return-default-gui"

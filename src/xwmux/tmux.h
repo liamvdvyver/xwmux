@@ -45,7 +45,6 @@ class TmuxClient {
     void kill_pane(const TmuxPaneID tm_pane) const;
     void focus_location(const TmuxPaneID tm_pane) const;
     void name_pane(const TmuxPaneID tm_pane, const std::string_view name) const;
-    void send_prefix() const;
     void send_escape() const;
     bool client_prefix_active() const;
     bool find_pane(const TmuxPaneID tm_pane) const;

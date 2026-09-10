@@ -97,14 +97,6 @@ void TmuxClient::name_pane(const TmuxPaneID tm_pane,
     }
 }
 
-void TmuxClient::send_prefix() const {
-    if (run(std::format(
-            "{} send-keys -K $({} show-option prefix | cut -f 2 -d ' ')",
-            base_command(), base_command()))) {
-        xwmux::log_error("Failed to send prefix.\n");
-    }
-}
-
 void TmuxClient::send_escape() const {
     if (run(std::format("{} send-keys -K escape", base_command()))) {
         xwmux::log_error("Failed to send escape.\n");

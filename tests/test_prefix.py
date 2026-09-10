@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import sys
-import time
 import unittest
 
 from xwmux_test_harness import XwmuxTestHarness
@@ -37,9 +36,7 @@ class PrefixIntegrationTest(unittest.TestCase):
         return terminal_window_id
 
     def _send_prefix_and_wait_for_tmux(self, terminal_window_id, *, focus_message, prefix_message):
-        # TODO: Remove this sleep and fix the flaky prefix tests by waiting for
-        # a real tmux/xwmux readiness signal after split/focus churn.
-        time.sleep(2)
+        self.harness.wait_until_wm_synced()
         self.harness.send_key("ctrl+b")
         self.harness.wait_for(
             lambda: self.harness.focused_window_id() == terminal_window_id,
@@ -137,8 +134,6 @@ class PrefixIntegrationTest(unittest.TestCase):
         self.harness.stop()
 
     def test_prefix_twice_sends_prefix_to_gui_and_clears_tmux_prefix(self):
-        # TODO: Extend this regression to xterm once prefix passthrough uses
-        # XTEST instead of synthetic XSendEvent key events.
         gui_pane, log_path = self._launch_key_logger_and_wait_for_gui_pane()
         terminal_window_id = self.harness.root_terminal_window_id()
 
@@ -161,12 +156,8 @@ class PrefixIntegrationTest(unittest.TestCase):
             message="second prefix was not forwarded to the GUI window",
         )
         forwarded = data[len(before):]
-        # TODO: Tighten this back to b"\x02" once prefix passthrough uses
-        # XTEST and xterm is supported on this path. With the current
-        # synthetic XSendEvent path, kitty records plain b for the forwarded
-        # prefix keypress.
         self.assertIn(
-            b"b",
+            b"\x02",
             forwarded,
             f"expected forwarded prefix input to reach kitty key logger, saw: {forwarded!r}",
         )

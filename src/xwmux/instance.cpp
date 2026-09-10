@@ -290,8 +290,8 @@ template <> void WMInstance::handle_x_event<KeyPress>(XEvent &ev) {
     if (m_xstate.prefix_initialized &&
         k_ev.keycode == m_xstate.prefix.keycode &&
         k_ev.state == m_xstate.prefix.modifiers) {
-        // Release the active grab, and generate focus in event
-        XUngrabKeyboard(m_xstate.display, CurrentTime);
+        // Keep the synchronous grab until the captured prefix key is replayed
+        // to its new focus target below.
 
         // If terminal is focused (prefix active), overriding gui,
         // redirect the event to the gui window
@@ -302,21 +302,11 @@ template <> void WMInstance::handle_x_event<KeyPress>(XEvent &ev) {
             m_tmux_mapping.clear_override();
             focus_active_pane(m_tmux_mapping.get_active().value(), true);
 
-            // HACK: ensure the focused window has input focus before the keys
-            // are sent.
+            // Focus is processed before replaying the originally captured key
+            // to the GUI client.
             m_xstate.sync();
-
-            // TODO: Replace this XSendEvent-based passthrough with XTEST so
-            // clients like xterm receive input as real keyboard events. For
-            // now, kitty is the main supported terminal for the double-prefix
-            // passthrough path.
-            k_ev.display = m_xstate.display;
-            k_ev.root = XDefaultRootWindow(m_xstate.display);
-            k_ev.same_screen = True;
-            k_ev.time = CurrentTime;
-            k_ev.subwindow = None;
-            k_ev.window = m_tmux_mapping.current_window();
-            XSendEvent(m_xstate.display, k_ev.window, 0, 0, &ev);
+            XAllowEvents(m_xstate.display, ReplayKeyboard, CurrentTime);
+            m_xstate.sync();
             return;
         }
 
@@ -331,10 +321,10 @@ template <> void WMInstance::handle_x_event<KeyPress>(XEvent &ev) {
             m_xstate.focus_term();
         }
 
-        // Ensure tmux gets focus
+        // Focus is processed before replaying the originally captured key.
         m_xstate.sync();
-
-        m_tmux.send_prefix();
+        XAllowEvents(m_xstate.display, ReplayKeyboard, CurrentTime);
+        m_xstate.sync();
     }
 }
 

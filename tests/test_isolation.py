@@ -31,7 +31,7 @@ class IsolationIntegrationTest(unittest.TestCase):
             self.assertNotEqual(startup["HOST_DISPLAY"], ":424242")
             self.assertNotEqual(startup["DISPLAY"], startup["HOST_DISPLAY"])
             harness.wait_until_ready()
-            runtime_dir = Path(startup["XWMUX_TMUX_SOCKET"]).parent
+            runtime_dir = Path(startup["TMUX_SOCKET"]).parent
             harness.stop()
             self.assertFalse(runtime_dir.exists(), "test runtime directory was not cleaned up")
         finally:

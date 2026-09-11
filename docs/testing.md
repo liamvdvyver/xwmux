@@ -10,17 +10,17 @@ From the repository root:
 ```sh
 cmake -S . -B build
 cmake --build build -j"$(nproc)"
-env -u DISPLAY -u XAUTHORITY -u TMUX -u XWMUX_TMUX_SOCKET python3 tests/run_all.py
+env -u DISPLAY -u XAUTHORITY -u TMUX python3 tests/run_all.py
 ```
 
 If dependencies are unavailable, enter the Nix development environment first
 (`nix develop`). Focused integration tests include:
 
 ```sh
-env -u DISPLAY -u XAUTHORITY -u TMUX -u XWMUX_TMUX_SOCKET python3 tests/test_dump_state.py
-env -u DISPLAY -u XAUTHORITY -u TMUX -u XWMUX_TMUX_SOCKET python3 tests/test_prefix.py
-env -u DISPLAY -u XAUTHORITY -u TMUX -u XWMUX_TMUX_SOCKET python3 tests/test_sync.py
-env -u DISPLAY -u XAUTHORITY -u TMUX -u XWMUX_TMUX_SOCKET python3 tests/test_focus.py
+env -u DISPLAY -u XAUTHORITY -u TMUX python3 tests/test_dump_state.py
+env -u DISPLAY -u XAUTHORITY -u TMUX python3 tests/test_prefix.py
+env -u DISPLAY -u XAUTHORITY -u TMUX python3 tests/test_sync.py
+env -u DISPLAY -u XAUTHORITY -u TMUX python3 tests/test_focus.py
 ```
 
 The tests skip when their headless prerequisites are not available.

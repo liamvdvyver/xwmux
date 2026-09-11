@@ -7,15 +7,6 @@
 #include <sstream>
 #include <string>
 
-TmuxClient::TmuxClient()
-    : TmuxClient([]() -> std::optional<std::string> {
-          const char *socket = std::getenv("XWMUX_TMUX_SOCKET");
-          if (!socket || socket[0] == '\0') {
-              return std::nullopt;
-          }
-          return std::string(socket);
-      }()) {}
-
 TmuxClient::TmuxClient(std::optional<std::string> socket)
     : m_socket(std::move(socket)) {}
 

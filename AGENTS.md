@@ -31,12 +31,12 @@ Expected binaries after build:
 Run integration tests only with the safe invocation (including focused runs):
 
 ```bash
-env -u DISPLAY -u XAUTHORITY -u TMUX -u XWMUX_TMUX_SOCKET python3 tests/run_all.py
+env -u DISPLAY -u XAUTHORITY -u TMUX python3 tests/run_all.py
 ```
 
 ```bash
-env -u DISPLAY -u XAUTHORITY -u TMUX -u XWMUX_TMUX_SOCKET python3 tests/test_dump_state.py
-env -u DISPLAY -u XAUTHORITY -u TMUX -u XWMUX_TMUX_SOCKET python3 tests/test_prefix.py
+env -u DISPLAY -u XAUTHORITY -u TMUX python3 tests/test_dump_state.py
+env -u DISPLAY -u XAUTHORITY -u TMUX python3 tests/test_prefix.py
 ```
 
 The harness also strips these variables from its launcher and always creates

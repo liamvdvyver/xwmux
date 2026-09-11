@@ -4,6 +4,28 @@
 
 session_name="default"
 HOOK_NO=69
+TMUX_SOCKET=""
+
+usage() {
+    echo "Usage: $0 [--tmux-socket <path>]" >&2
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --tmux-socket)
+            if [ -n "$TMUX_SOCKET" ] || [ "$#" -lt 2 ]; then
+                usage
+                exit 1
+            fi
+            TMUX_SOCKET="$2"
+            shift 2
+            ;;
+        *)
+            usage
+            exit 1
+            ;;
+    esac
+done
 
 resolve_target_session() {
     state_json=$(xwmux-ctl dump-state 2>/dev/null || true)
@@ -47,15 +69,13 @@ sys.stdout.write(f"@{window} %{pane}")
     fi
 }
 
-if [ -n "$XWMUX_TMUX_SOCKET" ]; then
-    tmux_cmd() {
-        tmux -S "$XWMUX_TMUX_SOCKET" "$@"
-    }
-else
-    tmux_cmd() {
+tmux_cmd() {
+    if [ -n "$TMUX_SOCKET" ]; then
+        tmux -S "$TMUX_SOCKET" "$@"
+    else
         tmux "$@"
-    }
-fi
+    fi
+}
 
 configure_tmux_hooks() {
     tmux_cmd set-hook -g after-split-window[$HOOK_NO]     'run-shell "xwmux-ctl refresh"'
@@ -76,11 +96,6 @@ configure_tmux_hooks() {
     tmux_cmd set-hook -g after-kill-pane[$HOOK_NO]        'run-shell "xwmux-ctl kill-pane orphans && xwmux-ctl refresh"'
     tmux_cmd set -g focus-events on
 }
-
-if [ "${1:-}" = "--configure-hooks" ]; then
-    configure_tmux_hooks
-    exit 0
-fi
 
 # BEGIN VIBECODED SECTION
 

@@ -26,7 +26,6 @@
             for script in \
               $out/bin/xwmux-init-term.sh \
               $out/bin/xwmux-launch-term.sh \
-              $out/bin/xwmux-tmux-conf.sh \
               $out/bin/xwmux-xephyr-test.sh
             do
               wrapProgram "$script" \

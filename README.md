@@ -22,11 +22,9 @@ Requires `tmux`, `xorg` server, and one of the following terminals to run:
 * Ensure your terminal is configured to use zero padding/borders on the
   top-left.
 
-No tmux configuration is required: the root-terminal initializer installs the
-required hooks on the tmux server when xwmux starts. If you use a dedicated
-tmux server, export `XWMUX_TMUX_SOCKET` before starting xwmux. When set,
-xwmux and its helper scripts use `tmux -S "$XWMUX_TMUX_SOCKET" ...` instead of
-the default tmux server.
+The root-terminal initializer installs the required hooks on the tmux server
+when xwmux starts. To use a dedicated tmux server, start xwmux with
+`xwmux --tmux-socket <path>`.
 
 ## Usage
 
@@ -52,19 +50,28 @@ The following commands are supported (for the end user):
 
 ## Configuration
 
-### Environment variables
+### tmux options
 
-* `XWMUX_TERMINAL`: terminal emulator used for the root terminal. Supported
-  values are `kitty`, `alacritty`, `st`, and `xterm`.
-* `TERMINAL`: fallback terminal selection if `XWMUX_TERMINAL` is unset.
-* `XWMUX_TMUX_SOCKET`: path to the tmux socket xwmux should use. When set,
-  all WM-side tmux interaction and the helper scripts use that socket via
-  `tmux -S <socket> ...`. This is useful for isolated test setups and for
-  running xwmux against a dedicated tmux server.
+Set global xwmux options in your tmux configuration:
 
-If neither `XWMUX_TERMINAL` nor `TERMINAL` is set, xwmux picks the first
-available supported terminal in this order:
-`kitty`, `alacritty`, `st`, `xterm`.
+```tmux
+set -g @xwmux-terminal kitty
+```
+
+`@xwmux-terminal` accepts `kitty`, `alacritty`, `st`, or `xterm`. When it is
+unset or empty, xwmux uses a matching `TERMINAL` environment variable when
+present; otherwise it picks the first available supported terminal in this
+order: `kitty`, `alacritty`, `st`, `xterm`. An invalid configured value or an
+unavailable configured terminal reports an error without falling back.
+
+`@xwmux-terminal-command` is reserved for future arbitrary terminal commands
+and is currently ignored.
+
+### Command-line options
+
+`xwmux --tmux-socket <path>` connects xwmux and its root-terminal helper to a
+dedicated tmux server at `<path>`. Without this flag, xwmux uses the default
+tmux server.
 
 ### tmux options used by xwmux
 
@@ -82,9 +89,6 @@ The root-terminal initializer installs the tmux hooks xwmux needs to track pane
 focus, pane creation/destruction, window changes, and layout updates. It also
 enables tmux `focus-events`. No `~/.tmux.conf` changes are needed.
 
-`xwmux-tmux-conf.sh` remains as a compatibility entry point for existing
-configurations; it only registers those same hooks and is not needed for new
-installations.
 
 ### Test launcher
 

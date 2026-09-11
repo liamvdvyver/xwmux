@@ -6,9 +6,11 @@ extern "C" {
 }
 
 #include <cassert>
+#include <cstdlib>
 #include <cstring>
 #include <optional>
 #include <string>
+#include <string_view>
 
 #include "layout.h"
 #include "log.h"
@@ -26,11 +28,12 @@ struct ModifiedKeyCode {
 };
 
 struct XState {
-    XState()
+    explicit XState(const std::optional<std::string> &tmux_socket)
         : display(XOpenDisplay(nullptr)), root(XDefaultRootWindow(display)),
           screen(XDefaultScreenOfDisplay(display)), resolution(display),
           term_layout(display, Resolution()), term(std::nullopt), prefix(),
-          prefix_initialized(false), grabbed(false) {}
+          prefix_initialized(false), grabbed(false),
+          open_term_command(make_open_term_command(tmux_socket)) {}
 
     void set_resolution(const Resolution res) {
         resolution = res;
@@ -114,7 +117,7 @@ struct XState {
         return ret;
     }
 
-    int open_term() { return std::system("xwmux-launch-term.sh"); }
+    int open_term() { return std::system(open_term_command.c_str()); }
 
     void close_term() {
         // Close current window
@@ -159,6 +162,30 @@ struct XState {
     bool grabbed{};
 
   private:
+    static std::string shell_quote(const std::string_view value) {
+        std::string quoted{"'"};
+        for (const char c : value) {
+            if (c == '\'') {
+                quoted += "'\\''";
+            } else {
+                quoted.push_back(c);
+            }
+        }
+        quoted.push_back('\'');
+        return quoted;
+    }
+
+    static std::string make_open_term_command(
+        const std::optional<std::string> &tmux_socket) {
+        if (!tmux_socket.has_value()) {
+            return "xwmux-launch-term.sh";
+        }
+        return "xwmux-launch-term.sh --tmux-socket " +
+               shell_quote(tmux_socket.value());
+    }
+
+    std::string open_term_command;
+
     static int ignore_expected_bad_window(Display *, XErrorEvent *) {
         return 0;
     }

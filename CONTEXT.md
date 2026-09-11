@@ -23,3 +23,7 @@ _Avoid_: focus transition, focus lockout
 **Pointer selection**:
 An external X `FocusIn` on a visible mapped GUI client; it selects that client’s pane in tmux and cancels any active tmux prefix sequence. `FocusOut` alone has no tmux effect.
 _Avoid_: click focus, inverse focus
+
+**xwmux tmux option**:
+A global tmux user option in the `@xwmux-*` namespace that configures xwmux through its connected tmux server. `@xwmux-terminal` selects a supported root terminal; `@xwmux-terminal-command` is reserved for a future arbitrary-command setting.
+_Avoid_: xwmux environment variable, WM setting

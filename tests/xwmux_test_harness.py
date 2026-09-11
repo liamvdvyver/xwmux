@@ -73,7 +73,7 @@ class XwmuxTestHarness:
 
     Main responsibilities:
     - launch and stop an isolated xwmux instance inside Xephyr
-    - expose the nested DISPLAY and tmux socket through ``self.test_env``
+    - expose the nested DISPLAY through ``self.test_env`` and retain the tmux socket
     - run helper commands against the isolated tmux server
     - inspect WM state via ``xwmux-ctl dump-state``
     - query actual X focus via ``xdotool``
@@ -83,6 +83,7 @@ class XwmuxTestHarness:
         self.launcher = None
         self.launcher_log_thread = None
         self.test_env = None
+        self.tmux_socket = None
         self.processes = []
         self.temp_paths = []
         self.action_log = deque(maxlen=200)
@@ -108,7 +109,7 @@ class XwmuxTestHarness:
         if not XWMUX_CTL.exists():
             raise RuntimeError(f"missing binary: {XWMUX_CTL}")
 
-        for program in ["Xvfb", "xmessage", "xdotool", "xprop", "tmux", "python3", "xterm", "xwininfo", "Xephyr"]:
+        for program in ["Xvfb", "xmessage", "xdotool", "xprop", "tmux", "python3", "kitty", "xterm", "xwininfo", "Xephyr"]:
             XwmuxTestHarness.require_program(program)
 
     def _record_action(self, action, details=None):
@@ -127,7 +128,7 @@ class XwmuxTestHarness:
         """Start the nested xwmux test instance and capture its environment.
 
         Returns a dict parsed from launcher startup output. The most important
-        keys are ``DISPLAY`` and ``XWMUX_TMUX_SOCKET``.
+        keys are ``DISPLAY`` and ``TMUX_SOCKET``.
         """
         if self.launcher is not None:
             raise RuntimeError("test harness is already running")
@@ -136,7 +137,7 @@ class XwmuxTestHarness:
         # The launcher always starts Xvfb, but also remove session selectors
         # from every child it starts.  This makes accidental use of a caller's
         # desktop or tmux server impossible even if a script regresses.
-        for name in ("DISPLAY", "XAUTHORITY", "TMUX", "XWMUX_TMUX_SOCKET"):
+        for name in ("DISPLAY", "XAUTHORITY", "TMUX", "XWMUX_TMUX_SOCKET", "XWMUX_TERMINAL", "TERMINAL"):
             launcher_env.pop(name, None)
         launcher_env["PATH"] = f"{BUILD_DIR}:{SCRIPTS_DIR}:{launcher_env.get('PATH', '')}"
 
@@ -162,7 +163,7 @@ class XwmuxTestHarness:
             startup = self._read_startup_env()
             self.test_env = launcher_env.copy()
             self.test_env["DISPLAY"] = startup["DISPLAY"]
-            self.test_env["XWMUX_TMUX_SOCKET"] = startup["XWMUX_TMUX_SOCKET"]
+            self.tmux_socket = startup["TMUX_SOCKET"]
             self._record_action("startup-env", startup)
 
             self.launcher_log_thread = threading.Thread(
@@ -281,7 +282,7 @@ class XwmuxTestHarness:
             if line.startswith("  ") and "=" in line:
                 key, value = line.strip().split("=", 1)
                 startup[key] = value
-                if {"HOST_DISPLAY", "DISPLAY", "XWMUX_TMUX_SOCKET", "STARTED_XVFB"} <= startup.keys():
+                if {"HOST_DISPLAY", "DISPLAY", "TMUX_SOCKET", "STARTED_XVFB"} <= startup.keys():
                     return startup
 
         raise RuntimeError("timed out waiting for launcher startup output")
@@ -392,7 +393,7 @@ class XwmuxTestHarness:
         """Run a tmux command against the isolated test server and return stdout."""
         self._record_action("tmux", list(args))
         return subprocess.check_output(
-            ["tmux", "-S", self.test_env["XWMUX_TMUX_SOCKET"], *args],
+            ["tmux", "-S", self.tmux_socket, *args],
             env=self.test_env,
             text=True,
         )
@@ -646,7 +647,7 @@ class XwmuxTestHarness:
             "launcher_logs": list(self.launcher_logs),
             "env": {
                 "DISPLAY": None if self.test_env is None else self.test_env.get("DISPLAY"),
-                "XWMUX_TMUX_SOCKET": None if self.test_env is None else self.test_env.get("XWMUX_TMUX_SOCKET"),
+                "TMUX_SOCKET": self.tmux_socket,
             },
         }
 
@@ -661,14 +662,14 @@ class XwmuxTestHarness:
 
         snapshot["focused_window"] = self._safe_command_output(["xdotool", "getwindowfocus"]).strip()
         snapshot["tmux_client_prefix"] = self._safe_command_output(
-            ["tmux", "-S", self.test_env["XWMUX_TMUX_SOCKET"], "display-message", "-p", "#{client_prefix}"]
+            ["tmux", "-S", self.tmux_socket, "display-message", "-p", "#{client_prefix}"]
         ).strip()
         snapshot["tmux_list_panes"] = self._safe_command_output(
-            ["tmux", "-S", self.test_env["XWMUX_TMUX_SOCKET"], "list-panes", "-a", "-F",
+            ["tmux", "-S", self.tmux_socket, "list-panes", "-a", "-F",
              "#{session_name} #{window_id} #{pane_id} active=#{pane_active} dead=#{pane_dead} zoomed=#{window_zoomed_flag} #{pane_left} #{pane_top} #{pane_width} #{pane_height}"]
         )
         snapshot["tmux_list_windows"] = self._safe_command_output(
-            ["tmux", "-S", self.test_env["XWMUX_TMUX_SOCKET"], "list-windows", "-a", "-F",
+            ["tmux", "-S", self.tmux_socket, "list-windows", "-a", "-F",
              "#{session_name} #{window_id} active=#{window_active} panes=#{window_panes} zoomed=#{window_zoomed_flag} name=#{window_name}"]
         )
         snapshot["root_child_stack"] = self._safe_command_output(["xwininfo", "-root", "-children"])

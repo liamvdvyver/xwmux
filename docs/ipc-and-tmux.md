@@ -34,8 +34,8 @@ The root terminal launcher chooses a supported terminal and runs
 
 1. queries the terminal for pixel dimensions (XTWINOPS `14t`) and text-grid
    dimensions (`18t`);
-2. chooses `tmux -S "$XWMUX_TMUX_SOCKET"` when that variable is nonempty,
-   otherwise `tmux`;
+2. uses the socket supplied by `xwmux --tmux-socket` when present, otherwise
+   `tmux`;
 3. creates a detached `default` session if no server is available;
 4. reads global `status`, `status-position`, and `prefix` options;
 5. reports the layout and prefix through `xwmux-ctl`; and
@@ -48,9 +48,8 @@ which contains the currently active mapped pane rather than always using
 
 ## Current hook installation
 
-The current user-facing setup in the top-level README asks tmux configuration
-to run `xwmux-tmux-conf.sh`. That script uses hook slot `69`, enables tmux
-`focus-events`, and registers `run-shell "xwmux-report.sh"` for these hooks:
+The root-terminal initializer uses hook slot `69`, enables tmux `focus-events`,
+and registers `run-shell "xwmux-report.sh"` for these hooks:
 
 - `after-split-window`, `pane-exited`, `window-pane-changed`;
 - `client-session-changed`, `session-window-changed`, `after-select-window`;
@@ -63,9 +62,9 @@ report script. This document describes the checked-in behavior only; hook
 installation and script organization may be changed independently of these
 architecture notes.
 
-All scripts and the WM-side tmux client honor `XWMUX_TMUX_SOCKET`. The C++
-client uses it for tmux commands such as the snapshot query, pane creation,
-pane killing, pane naming, prefix-state query, and Escape delivery.
+The `--tmux-socket` argument is passed to the root-terminal scripts and used
+by the WM-side tmux client for the snapshot query, pane creation, pane killing,
+pane naming, prefix-state query, and Escape delivery.
 
 ## Snapshot data used by the WM
 
@@ -85,10 +84,10 @@ rectangle in terminal-cell coordinates, and sorts focused and empty (`pane_pid
 == 0`) records first. The reconciliation semantics are documented in
 [Event flows](event-flows.md).
 
-## Environment boundary
+## Configuration boundary
 
-`XWMUX_TMUX_SOCKET` must be exported before both xwmux and its helper script
-path are started to select a dedicated tmux server. Without it, the default
-tmux server is used. `XWMUX_TERMINAL` (or fallback `TERMINAL`) controls the
-root terminal launcher; supported named launch paths are kitty, alacritty, st,
-and xterm.
+`--tmux-socket <path>` selects a dedicated tmux server; without it, xwmux uses
+the default server. The launcher reads global `@xwmux-terminal` from that
+server. When the option is unset or empty, a matching `TERMINAL` value is a
+fallback before terminal auto-detection. Supported named terminals are kitty,
+alacritty, st, and xterm.

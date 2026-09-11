@@ -37,8 +37,7 @@ struct TmuxSnapshot {
 
 class TmuxClient {
   public:
-    TmuxClient();
-    explicit TmuxClient(std::optional<std::string> socket);
+    explicit TmuxClient(std::optional<std::string> socket = std::nullopt);
 
     void split_window() const;
     void send_message(const std::string_view msg) const;

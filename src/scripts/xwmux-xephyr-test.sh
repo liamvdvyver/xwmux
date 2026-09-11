@@ -31,7 +31,7 @@ export PATH="$BUILD_DIR:$SCRIPTS_DIR:$PATH"
 # In particular, do not let a nested command discover the developer's tmux
 # client through its environment.  Every test tmux command uses the socket
 # below.
-unset DISPLAY XAUTHORITY TMUX XWMUX_TMUX_SOCKET
+unset DISPLAY XAUTHORITY TMUX XWMUX_TMUX_SOCKET XWMUX_TERMINAL TERMINAL
 
 if [ ! -x "$XWMUX_BIN" ] || [ ! -x "$CTL_BIN" ]; then
     echo "Missing built binaries in $BUILD_DIR" >&2
@@ -63,7 +63,7 @@ find_free_display() {
 # tmux server addressed through this freshly-created, private socket path.
 RUNTIME_DIR=$(mktemp -d "${TMPDIR:-/tmp}/xwmux-xephyr.XXXXXX")
 chmod 700 "$RUNTIME_DIR"
-export XWMUX_TMUX_SOCKET="$RUNTIME_DIR/tmux.sock"
+TMUX_SOCKET="$RUNTIME_DIR/tmux.sock"
 XWMUX_PID=""
 TMUX_PID=""
 XEPHYR_PID=""
@@ -95,8 +95,8 @@ cleanup() {
     terminate_child "$XWMUX_PID"
     # This is deliberately socket-addressed, never a server-name or process
     # name lookup, so an interactive tmux server cannot be selected.
-    if [ -S "$XWMUX_TMUX_SOCKET" ]; then
-        tmux -S "$XWMUX_TMUX_SOCKET" kill-server 2>/dev/null || true
+    if [ -S "$TMUX_SOCKET" ]; then
+        tmux -S "$TMUX_SOCKET" kill-server 2>/dev/null || true
     fi
     # tmux daemonizes into its own session, so it is not necessarily in the
     # launcher's process group.  This PID was queried from our private socket.
@@ -151,24 +151,20 @@ if [ ! -e "/tmp/.X11-unix/X${XEPHYR_DISPLAY#:}" ]; then
 fi
 
 export DISPLAY="$XEPHYR_DISPLAY"
-tmux -f "$TMUX_CONF" -S "$XWMUX_TMUX_SOCKET" new-session -d -s default
-TMUX_PID=$(tmux -S "$XWMUX_TMUX_SOCKET" display-message -p '#{pid}')
+tmux -f "$TMUX_CONF" -S "$TMUX_SOCKET" new-session -d -s default
+TMUX_PID=$(tmux -S "$TMUX_SOCKET" display-message -p '#{pid}')
 
 echo "Starting xwmux test instance"
 echo "  HOST_DISPLAY=$HOST_DISPLAY"
 echo "  DISPLAY=$DISPLAY"
-echo "  XWMUX_TMUX_SOCKET=$XWMUX_TMUX_SOCKET"
+echo "  TMUX_SOCKET=$TMUX_SOCKET"
 echo "  TMUX_CONF=$TMUX_CONF"
 echo "  STARTED_XVFB=1"
-if [ -n "${XWMUX_TERMINAL:-}" ]; then
-    echo "  XWMUX_TERMINAL=$XWMUX_TERMINAL"
-fi
 if [ "$VERBOSE" -eq 1 ]; then
-    echo "  XWMUX_VERBOSE=-vv"
     echo "--- xwmux logs follow ---"
-    "$XWMUX_BIN" -vv &
+    "$XWMUX_BIN" --tmux-socket "$TMUX_SOCKET" -vv &
 else
-    "$XWMUX_BIN" &
+    "$XWMUX_BIN" --tmux-socket "$TMUX_SOCKET" &
 fi
 XWMUX_PID=$!
 wait "$XWMUX_PID"

@@ -14,7 +14,9 @@ extern "C" {
 #include <cstring>
 #include <format>
 #include <iostream>
+#include <optional>
 #include <queue>
+#include <string>
 #include <unordered_set>
 #include <vector>
 
@@ -25,7 +27,8 @@ extern "C" {
 class WMInstance {
 
   public:
-    WMInstance() : m_xstate(), m_tmux() {
+    explicit WMInstance(const std::optional<std::string> &tmux_socket)
+        : m_xstate(tmux_socket), m_tmux(tmux_socket) {
         init();
         run();
     };

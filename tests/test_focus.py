@@ -64,6 +64,47 @@ class FocusIntegrationTest(unittest.TestCase):
             message="focusing GUI pane did not focus the GUI window",
         )
 
+    def test_focusing_visible_mapped_client_selects_its_tmux_pane(self):
+        first_gui = self.harness.launch_and_wait_for_gui_pane(title="xwmux-inverse-focus-first")
+        self.harness.launch_gui_window(title="xwmux-inverse-focus-second")
+        gui_panes = self.harness.wait_for(
+            lambda: panes if len(panes := self.harness.get_gui_panes(self.harness.dump_state())) == 2 else None,
+            message="second GUI client was not mapped",
+        )
+        second_gui = next(pane for pane in gui_panes if pane["x_window"] != first_gui["x_window"])
+
+        self.harness.tmux(
+            "join-pane", "-s", f"%{first_gui['pane']}", "-t", f"%{second_gui['pane']}"
+        )
+        self.harness.wait_for_state(
+            lambda state: state
+            if all(
+                not pane_state.get("hidden")
+                for pane_state in state["workspaces"][str(second_gui["window"])]["panes"].values()
+            )
+            else None,
+            message="GUI clients did not become visible in the same tmux window",
+        )
+        first_gui = self.harness.wait_for_gui_pane(
+            x_window=first_gui["x_window"],
+            message="first GUI client mapping did not follow its joined tmux pane",
+        )
+        self.harness.tmux("select-pane", "-t", f"%{second_gui['pane']}")
+        self.harness.wait_for_state(
+            lambda state: state
+            if state.get("active") == {"window": second_gui["window"], "pane": second_gui["pane"]}
+            else None,
+            message="second GUI client did not become active",
+        )
+
+        self.harness.focus_window(first_gui["x_window"])
+
+        self.harness.wait_for_state(
+            lambda state: state.get("active")
+            == {"window": first_gui["window"], "pane": first_gui["pane"]},
+            message="focusing a visible mapped client did not select its tmux pane",
+        )
+
     def test_focus_follows_gui_vs_terminal_when_switching_windows(self):
         gui_pane = self.harness.launch_and_wait_for_gui_pane(title="xwmux-focus-test")
         terminal_window_id = self.harness.root_terminal_window_id()

@@ -72,6 +72,23 @@ A zoomed active GUI pane deliberately permits a redundant X refocus even when
 its tmux location did not change. This handles changes such as zoom/unzoom
 where visibility and geometry change but the selected pane remains the same.
 
+## X input focus to tmux selection
+
+A normal `FocusIn` on a visible mapped GUI client selects that client’s tmux
+pane. xwmux does not update its active location optimistically: the tmux hook
+refresh confirms the selection, then applies visibility and geometry. Because
+the client already has X input focus, that confirming refresh preserves it
+rather than issuing another X focus request.
+
+`FocusIn` events for hidden or unmapped clients, and grab-related focus events,
+are ignored. `FocusOut` never changes tmux selection or restores focus; this
+avoids feedback loops with unmanaged popup windows. A normal focus event that
+echoes a tmux-driven X focus is ignored when its client is already active.
+
+If a prefix override is active, selecting a visible mapped client sends tmux
+Escape to cancel prefix mode, clears the override, and selects the client’s
+pane. This applies even when the selected client is already the active pane.
+
 ## Closing and withdrawal
 
 - If a mapped client emits `UnmapNotify` that does **not** match a pending

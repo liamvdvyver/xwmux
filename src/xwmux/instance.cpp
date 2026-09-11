@@ -26,6 +26,8 @@ std::string x_event_name(const int type) {
         return "DestroyNotify";
     case KeyPress:
         return "KeyPress";
+    case FocusIn:
+        return "FocusIn";
     case KeyRelease:
         return "KeyRelease";
     case ClientMessage:
@@ -244,8 +246,8 @@ template <> void WMInstance::handle_x_event<MapRequest>(XMapRequestEvent &ev) {
         m_pending_windows.insert(w);
         m_tmux.split_window();
 
-        // Watch for name changes
-        XSelectInput(m_xstate.display, w, PropertyChangeMask);
+        // Watch for name and input-focus changes.
+        XSelectInput(m_xstate.display, w, PropertyChangeMask | FocusChangeMask);
     }
 }
 
@@ -326,6 +328,34 @@ template <> void WMInstance::handle_x_event<KeyPress>(XEvent &ev) {
         XAllowEvents(m_xstate.display, ReplayKeyboard, CurrentTime);
         m_xstate.sync();
     }
+}
+
+template <> void WMInstance::handle_x_event<FocusIn>(XFocusChangeEvent &ev) {
+    xwmux::log_debug(std::format(
+        "Handling X event: FocusIn window={} mode={} detail={}\n",
+        static_cast<unsigned long>(ev.window), ev.mode, ev.detail));
+
+    if (ev.mode != NotifyNormal || !m_tmux_mapping.has_window(ev.window) ||
+        m_tmux_mapping.is_hidden(ev.window)) {
+        return;
+    }
+
+    const TmuxLocation location = m_tmux_mapping.find(ev.window);
+    if (m_tmux_mapping.overridden()) {
+        // An external focus selection cancels the prefix sequence before
+        // selecting its target, including the already-active GUI client.
+        m_tmux.send_escape();
+        m_tmux_mapping.clear_override();
+    } else if (m_tmux_mapping.get_active() == location) {
+        // X focus applied during a tmux-driven refresh echoes back as FocusIn.
+        return;
+    }
+
+    // tmux's subsequent hook refresh confirms the active location. The client
+    // already owns X input focus, so that refresh must not refocus it and
+    // generate a FocusIn echo.
+    m_ignore_focus = true;
+    m_tmux.focus_location(location.second);
 }
 
 template <>
@@ -606,12 +636,18 @@ void WMInstance::focus_active_pane(const TmuxLocation &location,
         } else {
             m_xstate.ungrab_prefix();
         }
-        XSetInputFocus(m_xstate.display, target, 0, 0);
+        if (m_ignore_focus) {
+            xwmux::log_debug(
+                "Focusing active pane preserving external X focus\n");
+        } else {
+            XSetInputFocus(m_xstate.display, target, 0, 0);
+        }
         m_tmux_mapping.set_active_pane(location.second);
     } else {
         xwmux::log_debug(
             "Focusing active pane skipping focus; location unchanged\n");
     }
+    m_ignore_focus = false;
 }
 
 void WMInstance::apply_active_pane_with_focus(const TmuxPaneSnapshot &pane,
@@ -779,6 +815,9 @@ void WMInstance::handle_event(XEvent &ev) {
         break;
     case KeyPress:
         handle_x_event<KeyPress>(ev);
+        break;
+    case FocusIn:
+        handle_x_event<FocusIn>(ev.xfocus);
         break;
     case ClientMessage:
         handle_x_event<ClientMessage>(ev.xclient);

@@ -133,6 +133,32 @@ class PrefixIntegrationTest(unittest.TestCase):
     def tearDown(self):
         self.harness.stop()
 
+    def test_focusing_active_gui_client_cancels_prefix_override(self):
+        gui_pane = self.harness.launch_and_wait_for_gui_pane(title="xwmux-prefix-focus-cancel")
+        terminal_window_id = self.harness.root_terminal_window_id()
+
+        self._send_prefix_and_wait_for_tmux(
+            terminal_window_id,
+            focus_message="prefix did not focus the terminal before GUI selection",
+            prefix_message="tmux did not enter prefix mode before GUI selection",
+        )
+        self.harness.focus_window(gui_pane["x_window"])
+
+        self.harness.wait_for(
+            lambda: self.harness.focused_window_id() == gui_pane["x_window"],
+            message="focusing the GUI client did not restore its X focus",
+        )
+        self.harness.wait_for_state(
+            lambda state: state
+            if not state.get("overridden")
+            else None,
+            message="focusing the GUI client did not clear prefix override",
+        )
+        self.assertFalse(
+            self.harness.tmux_client_prefix_active(),
+            "focusing the GUI client did not cancel tmux prefix mode",
+        )
+
     def test_prefix_twice_sends_prefix_to_gui_and_clears_tmux_prefix(self):
         gui_pane, log_path = self._launch_key_logger_and_wait_for_gui_pane()
         terminal_window_id = self.harness.root_terminal_window_id()

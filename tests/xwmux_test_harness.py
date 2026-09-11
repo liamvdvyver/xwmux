@@ -529,6 +529,11 @@ class XwmuxTestHarness:
         output = subprocess.check_output(["xdotool", "getwindowfocus"], env=self.test_env, text=True)
         return int(output.strip())
 
+    def focus_window(self, window_id):
+        """Request X input focus for a window in the isolated display."""
+        self._record_action("focus-window", {"window_id": window_id})
+        subprocess.check_call(["xdotool", "windowfocus", str(window_id)], env=self.test_env)
+
     def kill_window(self, window_id):
         """Ask X to destroy a window by id."""
         self._record_action("kill-window", {"window_id": window_id})

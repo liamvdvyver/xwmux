@@ -37,6 +37,14 @@ prefix is active, xwmux updates workspace visibility and active-pane bookkeeping
 without stealing focus back from the terminal. This preserves the temporary
 override even if a hook refreshes state.
 
+## Pointer selection during a prefix override
+
+Selecting a visible mapped GUI client while the override is active also ends
+the prefix sequence. xwmux sends tmux Escape, clears the override, and selects
+the client’s pane. This includes selecting the GUI client that was already
+active before the prefix: pointer interaction leaves tmux and X focus in the
+same clean state as a completed tmux command.
+
 ## Completing a tmux command
 
 The next key is delivered to the terminal/tmux client. A tmux command may

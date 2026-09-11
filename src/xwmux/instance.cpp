@@ -218,7 +218,16 @@ template <> void WMInstance::handle_x_event<MapRequest>(XMapRequestEvent &ev) {
                                  static_cast<unsigned long>(ev.window)));
 
     Window w = ev.window;
-    if (m_xstate.override_redirect(w)) {
+    const std::optional<bool> override_redirect =
+        m_xstate.override_redirect(w);
+    if (!override_redirect.has_value()) {
+        xwmux::log_debug(std::format(
+            "Ignoring MapRequest for destroyed window={}\n",
+            static_cast<unsigned long>(w)));
+        return;
+    }
+
+    if (override_redirect.value()) {
     } else if (m_xstate.is_root_term(w)) {
         m_xstate.set_term(w);
         m_xstate.resolution.fullscreen().resize_to(m_xstate.display, w);

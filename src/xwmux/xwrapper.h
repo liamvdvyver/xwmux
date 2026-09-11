@@ -130,9 +130,19 @@ struct XState {
         return std::nullopt;
     }
 
-    constexpr bool override_redirect(Window id) {
+    std::optional<bool> override_redirect(Window id) {
         XWindowAttributes attr;
-        XGetWindowAttributes(display, id, &attr);
+        // A MapRequest can remain queued after its client destroys the window.
+        // XGetWindowAttributes synchronously reports that expected BadWindow;
+        // suppress it only for this existence check, then restore xwmux's
+        // runtime handler for all other X requests.
+        XErrorHandler previous_handler =
+            XSetErrorHandler(ignore_expected_bad_window);
+        const Status status = XGetWindowAttributes(display, id, &attr);
+        XSetErrorHandler(previous_handler);
+        if (!status) {
+            return std::nullopt;
+        }
         return attr.override_redirect;
     }
 
@@ -149,6 +159,10 @@ struct XState {
     bool grabbed{};
 
   private:
+    static int ignore_expected_bad_window(Display *, XErrorEvent *) {
+        return 0;
+    }
+
     struct WrappedHints {
       public:
         WrappedHints(Display *display, Window id)

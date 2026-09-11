@@ -189,6 +189,17 @@ class WMInstance {
 
     static int runtime_handler(_XDisplay *display, XErrorEvent *err) {
 
+        // Clients may destroy a mapped window while its operations are still
+        // queued. Its later DestroyNotify reconciles the mapping, so BadWindow
+        // is an expected lifecycle race rather than a WM failure.
+        if (err->error_code == BadWindow) {
+            xwmux::log_debug(std::format(
+                "Ignoring X11 BadWindow for resource_id={} request_code={}\n",
+                static_cast<unsigned long>(err->resourceid),
+                err->request_code));
+            return EXIT_SUCCESS;
+        }
+
         size_t err_msg_len = 100;
         char *err_msg = (char *)malloc(err_msg_len + 1);
         XGetErrorText(display, err->error_code, err_msg, err_msg_len);
